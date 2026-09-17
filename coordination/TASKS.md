@@ -7,14 +7,28 @@ GitHub is the source of truth for Chat A, Chat B, and Chat C.
 - Chat B — Tasks 24–43: Client, package, sessions, accounting, recharge, expiry, billing.
 - Chat C — Tasks 44–65: Wallet, portal, security, QA, integration, release.
 
-## Verified bootstrap checkpoints
-- main: 6d19c81c92085311a7c1cba492e9dd6dac1a9dda
-- Chat A: 32837432b387fc491665af7765d3a229a355dde1
-- Chat B: 6845a4bb0f198ecd88faa3f730a0f35dadccd831
-- Chat C: 6d19c81c92085311a7c1cba492e9dd6dac1a9dda
+## Current synchronized checkpoints
+These replace the historical pre-bootstrap SHAs.
+- main: a4c749f359d60a2eafea757316486f87f03c973e
+- Chat A / chat-a/network-vpn: aad1cc61c4e0c9a95b22b97fd5d191a6f528335a
+- Chat B / chat-b/core-billing: 4c6833c78fd361408090a8c7a803c71ad96a2552
+- Chat C / chat-c/integration-release: a4c749f359d60a2eafea757316486f87f03c973e
 
 ## Current status
 - GitHub history import: COMPLETE
-- Task 44: IN_PROGRESS — isolated worktree; wallet migration pending tests and integration.
+- Task 24: IN_PROGRESS — Chat B owns the shared client/package/accounting/billing schema contract.
+- Task 44: IN_PROGRESS — Chat C may continue wallet/service/security audit and tests that do not change the locked shared schema.
+- Task 44 shared-schema portion: WAITING_DEPENDENCY until Chat B publishes its schema commit and marks Task 24 READY_FOR_REVIEW.
+- Production: UNCHANGED. No feature chat may deploy.
+
+## Target VPS route
+Use Remote Desktop Commander device `NextGan-WiFi`, then:
+`ssh -i /root/.ssh/pppoe_radius_vps_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes root@149.104.71.83`
+
+Worktrees:
+- Chat A: `/opt/pppoe-radius-chat-a`
+- Chat B: `/opt/pppoe-radius-chat-b`
+- Chat C: `/opt/pppoe-radius-chat-c`
+- Production: `/opt/pppoe-radius-integration` (read-only unless deployment is explicitly approved)
 
 Status flow: TODO → IN_PROGRESS → WAITING_DEPENDENCY/BLOCKED → READY_FOR_REVIEW → VERIFIED → MERGED → DEPLOYED.
