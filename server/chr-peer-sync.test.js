@@ -39,10 +39,26 @@ test('rejects existing key/address conflicts without writes', async () => {
   expect(adapter.addPeer).not.toHaveBeenCalled();
 });
 
-test('readback mismatch fails closed after adapter claims success', async () => {
+test('ambiguous add readback fails closed without deleting an unverified peer', async () => {
   const { adapter } = mock();
   adapter.addPeer = vi.fn(async () => undefined);
+  await expect(createChrPeerSync(adapter).enable(peer)).rejects.toThrow('compensation unverified');
+  expect(adapter.removePeer).not.toHaveBeenCalled();
+});
+
+test('enable compensates a verified created peer when readback is wrong', async () => {
+  const { adapter, peers } = mock();
+  let reads = 0;
+  const originalList = adapter.listPeers;
+  adapter.listPeers = vi.fn(async () => {
+    reads += 1;
+    const current = await originalList();
+    if (reads === 2) return current.map((item) => ({ ...item, disabled: true }));
+    return current;
+  });
   await expect(createChrPeerSync(adapter).enable(peer)).rejects.toThrow('readback mismatch');
+  expect(adapter.removePeer).toHaveBeenCalledTimes(1);
+  expect(peers()).toEqual([]);
 });
 
 test('readback unavailable, malformed peer and missing adapter fail closed', async () => {
