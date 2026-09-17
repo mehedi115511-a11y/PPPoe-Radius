@@ -1,0 +1,20 @@
+[Unit]
+Description=PPPoE Radius Integration API
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=pppoe-api
+Group=pppoe-api
+WorkingDirectory=/opt/pppoe-radius-integration
+EnvironmentFile=/etc/pppoe-radius/api.env
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
