@@ -1,0 +1,19 @@
+[Unit]
+Description=Secure public Winbox proxy to PPPoE RADIUS CHR
+After=network-online.target libvirtd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nobody
+Group=nogroup
+ExecStart=/usr/bin/socat TCP-LISTEN:18291,reuseaddr,fork,keepalive TCP:10.77.0.2:8291
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

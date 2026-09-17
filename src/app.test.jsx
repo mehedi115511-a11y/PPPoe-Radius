@@ -56,7 +56,26 @@ test("opens the add client form", async () => {
   expect(
     screen.getByRole("heading", { name: "Add Client" }),
   ).toBeInTheDocument();
-  const modal = screen.getByRole("heading", { name: "Add Client" }).closest("form");
+  const modal = screen
+    .getByRole("heading", { name: "Add Client" })
+    .closest("form");
   expect(within(modal).getByLabelText("Username")).toBeRequired();
-  expect(within(modal).getByLabelText("Expiry Date")).toHaveAttribute("type", "date");
+  expect(within(modal).getByLabelText("Expiry Date")).toHaveAttribute(
+    "type",
+    "date",
+  );
+});
+
+test("opens the package management form", async () => {
+  render(<App />);
+  await userEvent.click(screen.getByRole("button", { name: "Packages" }));
+  await userEvent.click(screen.getByRole("button", { name: "Add Package" }));
+  const modal = screen
+    .getByRole("heading", { name: "Add Package" })
+    .closest("form");
+  expect(within(modal).getByLabelText("Package Name")).toBeRequired();
+  expect(within(modal).getByLabelText("Download Mbps")).toHaveAttribute(
+    "min",
+    "1",
+  );
 });

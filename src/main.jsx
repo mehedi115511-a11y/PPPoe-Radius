@@ -670,6 +670,203 @@ function Clients() {
     </div>
   );
 }
+function Packages() {
+  const [items, setItems] = useState([]),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState(""),
+    [editing, setEditing] = useState(null),
+    [open, setOpen] = useState(false);
+  const load = () => {
+    setLoading(true);
+    apiGet("/api/packages")
+      .then((r) => {
+        setItems(r.data);
+        setError("");
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+  useEffect(load, []);
+  const save = async (event) => {
+    event.preventDefault();
+    setLoading(true);
+    const body = Object.fromEntries(new FormData(event.currentTarget));
+    body.downloadMbps = Number(body.downloadMbps);
+    body.uploadMbps = Number(body.uploadMbps);
+    body.price = Number(body.price);
+    body.validityDays = Number(body.validityDays);
+    try {
+      await apiSend(
+        editing ? `/api/packages/${editing.id}` : "/api/packages",
+        editing ? "PATCH" : "POST",
+        body,
+      );
+      setOpen(false);
+      setEditing(null);
+      load();
+    } catch (e) {
+      setError(e.message);
+      setLoading(false);
+    }
+  };
+  const remove = async () => {
+    if (!editing || !window.confirm(`Delete package ${editing.name}?`)) return;
+    try {
+      await apiSend(`/api/packages/${editing.id}`, "DELETE");
+      setOpen(false);
+      setEditing(null);
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+  return (
+    <div className="content">
+      <section className="page-title">
+        <div>
+          <h1>Packages</h1>
+          <p>Speed, pricing and validity plans</p>
+        </div>
+        <button
+          className="quick"
+          onClick={() => {
+            setEditing(null);
+            setOpen(true);
+          }}
+        >
+          <Plus />
+          Add Package
+        </button>
+      </section>
+      {error && <div className="data-warning">{error}</div>}
+      <section className="package-grid">
+        {loading && !items.length ? (
+          <div className="data-loading">Loading packages…</div>
+        ) : (
+          items.map((p) => (
+            <article className="package-card" key={p.id}>
+              <div>
+                <span className={p.status.toLowerCase()}>{p.status}</span>
+                <button
+                  onClick={() => {
+                    setEditing(p);
+                    setOpen(true);
+                  }}
+                  aria-label={`Edit ${p.name}`}
+                >
+                  •••
+                </button>
+              </div>
+              <Package />
+              <h2>{p.name}</h2>
+              <strong>৳{Number(p.price).toLocaleString("en-BD")}</strong>
+              <p>per {p.validityDays} days</p>
+              <ul>
+                <li>↓ {p.downloadMbps} Mbps Download</li>
+                <li>↑ {p.uploadMbps} Mbps Upload</li>
+                <li>{p.ownerRole} package</li>
+              </ul>
+            </article>
+          ))
+        )}
+      </section>
+      {open && (
+        <div className="client-modal-backdrop">
+          <form className="client-modal package-modal" onSubmit={save}>
+            <header>
+              <div>
+                <h2>{editing ? "Edit Package" : "Add Package"}</h2>
+                <p>Configure PPPoE speed and pricing</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Close package form"
+              >
+                <X />
+              </button>
+            </header>
+            {error && <div className="auth-error">{error}</div>}
+            <div className="client-form-grid">
+              <label>
+                Package Name
+                <input
+                  name="name"
+                  defaultValue={editing?.name || ""}
+                  required
+                />
+              </label>
+              <label>
+                Price (৳)
+                <input
+                  name="price"
+                  type="number"
+                  min="0"
+                  defaultValue={editing?.price || ""}
+                  required
+                />
+              </label>
+              <label>
+                Download Mbps
+                <input
+                  name="downloadMbps"
+                  type="number"
+                  min="1"
+                  defaultValue={editing?.downloadMbps || ""}
+                  required
+                />
+              </label>
+              <label>
+                Upload Mbps
+                <input
+                  name="uploadMbps"
+                  type="number"
+                  min="1"
+                  defaultValue={editing?.uploadMbps || ""}
+                  required
+                />
+              </label>
+              <label>
+                Validity Days
+                <input
+                  name="validityDays"
+                  type="number"
+                  min="1"
+                  defaultValue={editing?.validityDays || 30}
+                  required
+                />
+              </label>
+              <label>
+                Status
+                <select
+                  name="status"
+                  defaultValue={editing?.status || "Active"}
+                >
+                  <option>Active</option>
+                  <option>Disabled</option>
+                </select>
+              </label>
+            </div>
+            <footer>
+              {editing && (
+                <button type="button" className="danger" onClick={remove}>
+                  Delete Package
+                </button>
+              )}
+              <span />
+              <button type="button" onClick={() => setOpen(false)}>
+                Cancel
+              </button>
+              <button className="primary" disabled={loading}>
+                {loading ? "Saving…" : "Save Package"}
+              </button>
+            </footer>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
 function Simple({ name }) {
   return (
     <div className="content">
@@ -701,6 +898,8 @@ export function App() {
       <Dashboard role={role} />
     ) : active === "Clients" ? (
       <Clients />
+    ) : active === "Packages" ? (
+      <Packages />
     ) : (
       <Simple name={active} />
     );
