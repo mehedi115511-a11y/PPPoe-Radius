@@ -7,12 +7,12 @@ GitHub is the source of truth for Chat A, Chat B, and Chat C.
 - Chat B — Tasks 24–43: Client, package, sessions, accounting, recharge, expiry, billing.
 - Chat C — Tasks 44–65: Wallet, portal, security, QA, integration, release.
 
-## Current synchronized checkpoints
-These replace the historical pre-bootstrap SHAs.
-- main: a4c749f359d60a2eafea757316486f87f03c973e
-- Chat A / chat-a/network-vpn: aad1cc61c4e0c9a95b22b97fd5d191a6f528335a
-- Chat B / chat-b/core-billing: 4c6833c78fd361408090a8c7a803c71ad96a2552
-- Chat C / chat-c/integration-release: a4c749f359d60a2eafea757316486f87f03c973e
+## Bootstrap ancestry checkpoints
+These are known-good baseline ancestors, not exact current HEAD values. Coordination-only commits will make HEAD differ. Validate with `git merge-base --is-ancestor <checkpoint> HEAD`; do not report a blocker merely because `HEAD` is newer.
+- main baseline: a4c749f359d60a2eafea757316486f87f03c973e
+- Chat A baseline: aad1cc61c4e0c9a95b22b97fd5d191a6f528335a
+- Chat B baseline: 4c6833c78fd361408090a8c7a803c71ad96a2552
+- Chat C baseline: a4c749f359d60a2eafea757316486f87f03c973e
 
 ## Current status
 - GitHub history import: COMPLETE
