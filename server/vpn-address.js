@@ -10,5 +10,5 @@ export function allocateVpnAddress(assignedAddresses, subnet = VPN_SUBNET) {
   throw new Error("VPN peer address pool exhausted");
 }
 export function validateWireGuardPublicKey(value) {
-  return typeof value === "string" && /^[A-Za-z0-9+/]{43}=$/.test(value) && Buffer.from(value, "base64").length === 32;
+  return typeof value === "string" && /^[A-Za-z0-9+/]{43}=$/.test(value) && Buffer.from(value, "base64").length === 32 && Buffer.from(value, "base64").some(byte => byte !== 0) && Buffer.from(value, "base64").toString("base64") === value;
 }
