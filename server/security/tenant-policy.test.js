@@ -24,3 +24,16 @@ test('sub-reseller management requires matching parent', () => {
   assert.equal(canManageUser({ ...reseller, status: 'Suspended' }, sub), false);
   assert.equal(canManageUser(admin, sub), true);
 });
+test('malformed identifiers are denied instead of coerced', () => {
+  for (const id of [0, -1, 1.5, '0', '-1', '01', '1.0', '1e0', ' 1 ', 'NaN', '9007199254740992', null, undefined, {}, true]) {
+    assert.equal(canAccessOwner({ ...reseller, id }, 2), false);
+    assert.equal(canAccessOwner(reseller, id), false);
+  }
+});
+test('hierarchy refuses malformed parent and target identifiers', () => {
+  const target = { id: 4, role: 'Sub-reseller', parent_user_id: 2 };
+  for (const id of ['02', '2.0', '2e0', 0, -2, null, {}, true]) {
+    assert.equal(canManageUser(reseller, { ...target, parent_user_id: id }), false);
+    assert.equal(canManageUser(reseller, { ...target, id }), false);
+  }
+});
