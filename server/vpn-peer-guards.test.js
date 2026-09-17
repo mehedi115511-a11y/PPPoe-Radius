@@ -4,19 +4,21 @@ import { assertPeerAdmission } from './vpn-peer-guards.js';
 const key = (byte) => Buffer.alloc(32, byte).toString('base64');
 const candidate = { publicKey: key(1), tunnelIp: '10.78.0.2' };
 
-test('rejects a duplicate public key on any protected peer status', () => {
-  for (const status of ['pending', 'active', 'enabled', 'syncing', 'ACTIVE']) {
-    expect(() => assertPeerAdmission({ ...candidate, peers: [{ status, public_key: key(1), tunnel_ip: '10.78.0.3' }] })).toThrow('Duplicate active WireGuard public key');
+test('rejects duplicate public keys in all states, including revoked and unknown', () => {
+  for (const status of ['Pending', 'Active', 'Revoked', 'SyncError', 'enabled', 'syncing', 'unexpected', null]) {
+    expect(() => assertPeerAdmission({ ...candidate, peers: [{ status, public_key: key(1), tunnel_ip: '10.78.0.3' }] })).toThrow('Duplicate WireGuard public key');
   }
 });
 
-test('rejects a duplicate active tunnel IP across different keys', () => {
-  expect(() => assertPeerAdmission({ ...candidate, peers: [{ status: 'active', publicKey: key(2), tunnelIp: '10.78.0.2' }] })).toThrow('Duplicate active WireGuard tunnel address');
+test('rejects duplicate tunnel IPs across different keys, including revoked', () => {
+  for (const status of ['Active', 'Revoked', 'SyncError']) {
+    expect(() => assertPeerAdmission({ ...candidate, peers: [{ status, publicKey: key(2), tunnelIp: candidate.tunnelIp }] })).toThrow('Duplicate WireGuard tunnel address');
+  }
 });
 
-test('allows released peers and self-exclusion for idempotent retries', () => {
-  expect(assertPeerAdmission({ ...candidate, peers: [{ status: 'revoked', public_key: key(1), tunnel_ip: '10.78.0.2' }] })).toEqual(candidate);
-  expect(assertPeerAdmission({ ...candidate, peers: [{ id: 8, status: 'active', public_key: key(1), tunnel_ip: '10.78.0.2' }], excludeId: 8 })).toEqual(candidate);
+test('allows distinct peers and same-record idempotent retry', () => {
+  expect(assertPeerAdmission({ ...candidate, peers: [{ status: 'Revoked', public_key: key(2), tunnel_ip: '10.78.0.3' }] })).toEqual(candidate);
+  expect(assertPeerAdmission({ ...candidate, peers: [{ id: 8, status: 'Active', public_key: key(1), tunnel_ip: candidate.tunnelIp }], excludeId: 8 })).toEqual(candidate);
 });
 
 test('fails closed for malformed input', () => {
