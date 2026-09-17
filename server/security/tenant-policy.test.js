@@ -1,4 +1,4 @@
-import test from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { canAccessOwner, canManageUser } from './tenant-policy.js';
 const admin = { id: 1, role: 'Admin', status: 'Active' };
