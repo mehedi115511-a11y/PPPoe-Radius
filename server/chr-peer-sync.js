@@ -4,8 +4,8 @@ const address = (ip) => typeof ip === 'string' && /^10\.78\.0\.(?:[2-9]|[1-9]\d|
 
 /** Adapter contract: listPeers() -> [{id, publicKey, allowedAddress, disabled}],
  * addPeer({publicKey,allowedAddress,disabled}), setPeer(id,{disabled}), removePeer(id).
- * The adapter must authenticate through configured secrets; this module never logs them.
- * Caller serializes peer operations and persists audit/state after successful verification. */
+ * The adapter authenticates using configured secrets; never log credentials here.
+ * Caller must serialize operations and persist audit/state only after readback. */
 export function createChrPeerSync(adapter) {
   for (const method of ['listPeers', 'addPeer', 'setPeer', 'removePeer']) {
     if (typeof adapter?.[method] !== 'function') throw new TypeError(`CHR adapter missing ${method}`);
@@ -36,12 +36,38 @@ export function createChrPeerSync(adapter) {
         throw new Error('CHR duplicate peer or allowed address');
       }
       if (found.length === 1 && found[0].allowedAddress !== allowedAddress) throw new Error('CHR peer address conflict');
-      if (found.length === 0) {
-        await adapter.addPeer({ publicKey: peer.publicKey, allowedAddress, disabled: false });
-      } else if (found[0].disabled !== false) {
-        await adapter.setPeer(found[0].id, { disabled: false });
+      let created = false;
+      let previousDisabled;
+      try {
+        if (found.length === 0) {
+          await adapter.addPeer({ publicKey: peer.publicKey, allowedAddress, disabled: false });
+          created = true;
+        } else if (found[0].disabled !== false) {
+          previousDisabled = found[0].disabled;
+          await adapter.setPeer(found[0].id, { disabled: false });
+        }
+        return await verify(peer.publicKey, [(item) => item.allowedAddress === allowedAddress && item.disabled === false]);
+      } catch (error) {
+        // Only compensate changes conclusively made by this invocation. An ambiguous
+        // add failure requires reconciliation, not deletion of a possibly foreign peer.
+        try {
+          if (created) {
+            const candidates = match(await list(), peer.publicKey);
+            if (candidates.length === 1 && candidates[0].allowedAddress === allowedAddress) {
+              await adapter.removePeer(candidates[0].id);
+              await verify(peer.publicKey, []);
+            } else {
+              throw new Error('CHR enable compensation requires manual reconciliation');
+            }
+          } else if (previousDisabled !== undefined) {
+            await adapter.setPeer(found[0].id, { disabled: previousDisabled });
+            await verify(peer.publicKey, [(item) => item.allowedAddress === allowedAddress && item.disabled === previousDisabled]);
+          }
+        } catch (compensationError) {
+          throw new AggregateError([error, compensationError], 'CHR enable failed; compensation unverified');
+        }
+        throw error;
       }
-      return verify(peer.publicKey, [(item) => item.allowedAddress === allowedAddress && item.disabled === false]);
     },
     async disable(peer) {
       validate(peer);
