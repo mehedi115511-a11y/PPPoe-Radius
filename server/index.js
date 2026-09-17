@@ -8,6 +8,7 @@ import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
 import { allocateVpnAddress, validateWireGuardPublicKey } from "./vpn-address.js";
 import { renderRouterOsPeerScript } from "./vpn-config.js";
+import { revalidateSession } from "./security/session-revalidation.js";
 
 const { Pool } = pg;
 const app = express();
@@ -30,11 +31,12 @@ const loginLimiter = rateLimit({
 });
 const signToken = (payload) =>
   jwt.sign(payload, jwtSecret, { expiresIn: "30m", issuer: "pppoe-radius" });
-const authenticate = (req, res, next) => {
+const authenticate = async (req, res, next) => {
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
   if (!token) return res.status(401).json({ error: "Authentication required" });
   try {
-    req.auth = jwt.verify(token, jwtSecret, { issuer: "pppoe-radius" });
+    const claims = jwt.verify(token, jwtSecret, { issuer: "pppoe-radius" });
+    req.auth = await revalidateSession(pool, claims);
     next();
   } catch {
     return res.status(401).json({ error: "Invalid or expired session" });
