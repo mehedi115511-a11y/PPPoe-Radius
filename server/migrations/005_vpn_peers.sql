@@ -20,3 +20,7 @@ create table if not exists vpn_peer_audit (
  action varchar(32) not null check(action in ('Created','Revoked')),
  created_at timestamptz not null default now()
 );
+
+-- API role permissions (tables and identity sequences).
+grant select,insert,update,delete on vpn_peers,vpn_peer_audit to pppoe_app;
+grant usage,select on sequence vpn_peers_id_seq,vpn_peer_audit_id_seq to pppoe_app;
