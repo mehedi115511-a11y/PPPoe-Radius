@@ -1,6 +1,6 @@
 import React from "react";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, expect, test } from "vitest";
 import { App } from "./main.jsx";
@@ -47,4 +47,16 @@ test("searches clients by username", async () => {
   );
   expect(screen.getByText("Hasan Office")).toBeInTheDocument();
   expect(screen.queryByText("Saifan Net 1021")).not.toBeInTheDocument();
+});
+
+test("opens the add client form", async () => {
+  render(<App />);
+  await userEvent.click(screen.getByRole("button", { name: "Clients" }));
+  await userEvent.click(screen.getByRole("button", { name: "Add Client" }));
+  expect(
+    screen.getByRole("heading", { name: "Add Client" }),
+  ).toBeInTheDocument();
+  const modal = screen.getByRole("heading", { name: "Add Client" }).closest("form");
+  expect(within(modal).getByLabelText("Username")).toBeRequired();
+  expect(within(modal).getByLabelText("Expiry Date")).toHaveAttribute("type", "date");
 });

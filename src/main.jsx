@@ -119,6 +119,21 @@ const apiGet = async (path) => {
   if (!response.ok) throw new Error("Unable to load live data");
   return response.json();
 };
+const apiSend = async (path, method, body) => {
+  const token = localStorage.getItem("pppoe_token");
+  const response = await fetch(path, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  if (response.status === 204) return null;
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Request failed");
+  return data;
+};
 const nav = [
   [
     "Workspace",
@@ -200,7 +215,7 @@ function Stat({ x }) {
     </article>
   );
 }
-function Table({ rows, compact }) {
+function Table({ rows, compact, onAction }) {
   return (
     <div className="table-wrap">
       <table>
@@ -242,7 +257,13 @@ function Table({ rows, compact }) {
                 </span>
               </td>
               <td>
-                <button className="row-action">•••</button>
+                <button
+                  className="row-action"
+                  onClick={() => onAction?.(c)}
+                  aria-label={`Manage ${c.name}`}
+                >
+                  •••
+                </button>
               </td>
             </tr>
           ))}
@@ -404,8 +425,10 @@ function Clients() {
     [f, setF] = useState("All"),
     [clientData, setClientData] = useState(clients),
     [loading, setLoading] = useState(false),
-    [loadError, setLoadError] = useState("");
-  useEffect(() => {
+    [loadError, setLoadError] = useState(""),
+    [editing, setEditing] = useState(null),
+    [formOpen, setFormOpen] = useState(false);
+  const loadClients = () => {
     let active = true;
     setLoading(true);
     apiGet("/api/clients")
@@ -420,7 +443,59 @@ function Clients() {
     return () => {
       active = false;
     };
+  };
+  useEffect(() => {
+    return loadClients();
   }, []);
+  const openCreate = () => {
+    setEditing(null);
+    setLoadError("");
+    setFormOpen(true);
+  };
+  const openEdit = (client) => {
+    setEditing(client);
+    setLoadError("");
+    setFormOpen(true);
+  };
+  const saveClient = async (event) => {
+    event.preventDefault();
+    setLoading(true);
+    setLoadError("");
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    values.monthlyBill = Number(values.monthlyBill);
+    try {
+      await apiSend(
+        editing ? `/api/clients/${editing.id}` : "/api/clients",
+        editing ? "PATCH" : "POST",
+        values,
+      );
+      setFormOpen(false);
+      setEditing(null);
+      loadClients();
+    } catch (error) {
+      setLoadError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  const deleteClient = async () => {
+    if (
+      !editing ||
+      !window.confirm(`Delete ${editing.name}? History will be retained.`)
+    )
+      return;
+    setLoading(true);
+    try {
+      await apiSend(`/api/clients/${editing.id}`, "DELETE");
+      setFormOpen(false);
+      setEditing(null);
+      loadClients();
+    } catch (error) {
+      setLoadError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
   let rows = useMemo(
     () =>
       clientData.filter(
@@ -439,7 +514,7 @@ function Clients() {
           <h1>Clients</h1>
           <p>Accounts, packages, billing and sessions</p>
         </div>
-        <button className="quick">
+        <button className="quick" onClick={openCreate}>
           <Plus />
           Add Client
         </button>
@@ -468,11 +543,130 @@ function Clients() {
             ))}
           </div>
         </div>
-        <Table rows={rows} />
+        <Table rows={rows} onAction={openEdit} />
         {!rows.length && (
           <div className="empty">No clients matched this filter.</div>
         )}
       </section>
+      {formOpen && (
+        <div className="client-modal-backdrop">
+          <form className="client-modal" onSubmit={saveClient}>
+            <header>
+              <div>
+                <h2>{editing ? "Edit Client" : "Add Client"}</h2>
+                <p>PPPoE account and billing information</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormOpen(false)}
+                aria-label="Close client form"
+              >
+                <X />
+              </button>
+            </header>
+            {loadError && <div className="auth-error">{loadError}</div>}
+            <div className="client-form-grid">
+              <label>
+                Client Name
+                <input
+                  name="name"
+                  defaultValue={editing?.name || ""}
+                  required
+                />
+              </label>
+              <label>
+                Username
+                <input
+                  name="username"
+                  defaultValue={editing?.user || ""}
+                  required
+                />
+              </label>
+              <label>
+                Mobile
+                <input
+                  name="phone"
+                  defaultValue={editing?.phone || ""}
+                  required
+                />
+              </label>
+              <label>
+                Package
+                <input
+                  name="package"
+                  defaultValue={editing?.package || ""}
+                  placeholder="20 Mbps"
+                  required
+                />
+              </label>
+              <label>
+                Router / NAS
+                <input
+                  name="router"
+                  defaultValue={editing?.router || ""}
+                  required
+                />
+              </label>
+              <label>
+                Static IP
+                <input
+                  name="ip"
+                  defaultValue={editing?.ip || ""}
+                  placeholder="Optional"
+                />
+              </label>
+              <label>
+                Expiry Date
+                <input
+                  type="date"
+                  name="expiresAt"
+                  defaultValue={editing?.expiresAt?.slice(0, 10) || ""}
+                  required
+                />
+              </label>
+              <label>
+                Monthly Bill
+                <input
+                  type="number"
+                  min="0"
+                  name="monthlyBill"
+                  defaultValue={
+                    editing
+                      ? Number(String(editing.bill).replace(/[^0-9.]/g, ""))
+                      : ""
+                  }
+                  required
+                />
+              </label>
+              <label>
+                Status
+                <select
+                  name="status"
+                  defaultValue={editing?.status || "Offline"}
+                >
+                  <option>Online</option>
+                  <option>Offline</option>
+                  <option>Expired</option>
+                </select>
+              </label>
+            </div>
+            <footer>
+              {editing && (
+                <button type="button" className="danger" onClick={deleteClient}>
+                  Delete Client
+                </button>
+              )}
+              <span />
+              <button type="button" onClick={() => setFormOpen(false)}>
+                Cancel
+              </button>
+              <button className="primary" disabled={loading}>
+                {loading ? "Saving…" : "Save Client"}
+              </button>
+            </footer>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
