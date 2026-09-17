@@ -194,6 +194,8 @@ const parseClient = (body) => {
     expiresAt: body.expiresAt,
     monthlyBill: Number(body.monthlyBill),
     status: body.status || "Offline",
+    password: String(body.password || ""),
+    simultaneousUse: Number(body.simultaneousUse || 1),
   };
   if (
     !data.name ||
@@ -210,14 +212,68 @@ const parseClient = (body) => {
     });
   if (!["Online", "Offline", "Expired"].includes(data.status))
     throw Object.assign(new Error("Invalid client status"), { status: 422 });
+  if (
+    !Number.isInteger(data.simultaneousUse) ||
+    data.simultaneousUse < 1 ||
+    data.simultaneousUse > 10
+  )
+    throw Object.assign(
+      new Error("Simultaneous sessions must be between 1 and 10"),
+      { status: 422 },
+    );
   return data;
 };
 const returnedClient =
   'id,name,username "user",phone,package_name "package",router_name router,ip_address ip,expires_at "expiresAt",to_char(expires_at,\'DD Mon YYYY\') expiry,monthly_bill bill,status';
 
+const syncRadiusUser = async (db, data, previousUsername = null) => {
+  const oldUsername = previousUsername || data.username;
+  await db.query("delete from radcheck where username=$1", [oldUsername]);
+  await db.query("delete from radreply where username=$1", [oldUsername]);
+  await db.query("delete from radusergroup where username=$1", [oldUsername]);
+  const packageResult = await db.query(
+    "select download_mbps,upload_mbps from app_packages where name=$1 and status='Active' order by case when owner_role='Admin' then 1 else 0 end limit 1",
+    [data.packageName],
+  );
+  const speed = packageResult.rows[0] || {
+    download_mbps: Number.parseInt(data.packageName) || 10,
+    upload_mbps: Number.parseInt(data.packageName) || 10,
+  };
+  const expiry = await db.query(
+    "select to_char($1::date,'DD Mon YYYY 23:59:59') value",
+    [data.expiresAt],
+  );
+  await db.query(
+    "insert into radcheck(username,attribute,op,value) values($1,'Cleartext-Password',':=',$2),($1,'Simultaneous-Use',':=',$3),($1,'Expiration',':=',$4)",
+    [
+      data.username,
+      data.password,
+      String(data.simultaneousUse),
+      expiry.rows[0].value,
+    ],
+  );
+  await db.query(
+    "insert into radreply(username,attribute,op,value) values($1,'Mikrotik-Rate-Limit',':=',$2)",
+    [
+      data.username,
+      String(speed.upload_mbps) + "M/" + String(speed.download_mbps) + "M",
+    ],
+  );
+  if (data.ipAddress)
+    await db.query(
+      "insert into radreply(username,attribute,op,value) values($1,'Framed-IP-Address',':=',$2)",
+      [data.username, data.ipAddress],
+    );
+};
+
 app.post("/api/clients", authenticate, async (req, res, next) => {
+  const db = await pool.connect();
   try {
     const d = parseClient(req.body);
+    if (d.password.length < 6)
+      return res
+        .status(422)
+        .json({ error: "PPPoE password must contain at least 6 characters" });
     const owner =
       req.auth.role === "Admin" ? req.body.ownerRole || "Admin" : req.auth.role;
     if (!["Admin", "Reseller", "Sub-reseller"].includes(owner))
@@ -225,7 +281,8 @@ app.post("/api/clients", authenticate, async (req, res, next) => {
     const sql =
       "insert into app_clients(name,username,phone,package_name,router_name,ip_address,expires_at,monthly_bill,status,owner_role) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning " +
       returnedClient;
-    const { rows } = await pool.query(sql, [
+    await db.query("begin");
+    const { rows } = await db.query(sql, [
       d.name,
       d.username,
       d.phone,
@@ -237,15 +294,20 @@ app.post("/api/clients", authenticate, async (req, res, next) => {
       d.status,
       owner,
     ]);
-    await pool.query(
+    await syncRadiusUser(db, d);
+    await db.query(
       "insert into app_client_history(client_id,action,snapshot,actor_user_id) values($1,'Created',$2,$3)",
       [rows[0].id, rows[0], req.auth.id],
     );
+    await db.query("commit");
     res.status(201).json({ data: rows[0] });
   } catch (error) {
+    await db.query("rollback");
     if (error.code === "23505")
       return res.status(409).json({ error: "Username already exists" });
     next(error);
+  } finally {
+    db.release();
   }
 });
 
@@ -262,6 +324,18 @@ app.patch("/api/clients/:id", authenticate, async (req, res, next) => {
       await db.query("rollback");
       return res.status(404).json({ error: "Client not found" });
     }
+    if (!d.password) {
+      const secret = await db.query(
+        "select value from radcheck where username=$1 and attribute='Cleartext-Password' limit 1",
+        [old[0].username],
+      );
+      d.password = secret.rows[0]?.value || "";
+    }
+    if (d.password.length < 6)
+      throw Object.assign(
+        new Error("PPPoE password must contain at least 6 characters"),
+        { status: 422 },
+      );
     await db.query(
       "insert into app_client_history(client_id,action,snapshot,actor_user_id) values($1,'Updated',$2,$3)",
       [req.params.id, old[0], req.auth.id],
@@ -281,6 +355,7 @@ app.patch("/api/clients/:id", authenticate, async (req, res, next) => {
       d.status,
       req.params.id,
     ]);
+    await syncRadiusUser(db, d, old[0].username);
     await db.query("commit");
     res.json({ data: rows[0] });
   } catch (error) {
@@ -309,6 +384,15 @@ app.delete("/api/clients/:id", authenticate, async (req, res, next) => {
       "insert into app_client_history(client_id,action,snapshot,actor_user_id) values($1,'Deleted',$2,$3)",
       [req.params.id, rows[0], req.auth.id],
     );
+    await db.query("delete from radcheck where username=$1", [
+      rows[0].username,
+    ]);
+    await db.query("delete from radreply where username=$1", [
+      rows[0].username,
+    ]);
+    await db.query("delete from radusergroup where username=$1", [
+      rows[0].username,
+    ]);
     await db.query("commit");
     res.status(204).end();
   } catch (error) {

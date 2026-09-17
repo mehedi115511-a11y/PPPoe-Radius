@@ -60,6 +60,7 @@ test("opens the add client form", async () => {
     .getByRole("heading", { name: "Add Client" })
     .closest("form");
   expect(within(modal).getByLabelText("Username")).toBeRequired();
+  expect(within(modal).getByLabelText("PPPoE Password")).toBeRequired();
   expect(within(modal).getByLabelText("Expiry Date")).toHaveAttribute(
     "type",
     "date",

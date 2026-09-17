@@ -583,6 +583,20 @@ function Clients() {
                 />
               </label>
               <label>
+                PPPoE Password
+                <input
+                  name="password"
+                  type="password"
+                  minLength="6"
+                  placeholder={
+                    editing
+                      ? "Leave blank to keep current"
+                      : "Minimum 6 characters"
+                  }
+                  required={!editing}
+                />
+              </label>
+              <label>
                 Mobile
                 <input
                   name="phone"
@@ -648,6 +662,17 @@ function Clients() {
                   <option>Offline</option>
                   <option>Expired</option>
                 </select>
+              </label>
+              <label>
+                Simultaneous Sessions
+                <input
+                  type="number"
+                  name="simultaneousUse"
+                  min="1"
+                  max="10"
+                  defaultValue="1"
+                  required
+                />
               </label>
             </div>
             <footer>
