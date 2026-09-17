@@ -1,7 +1,6 @@
-'use strict';
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { minorUnits, assertWalletAccess, validatePosting, reconcile } = require('./ledger');
+import { test } from 'vitest';
+import assert from 'node:assert/strict';
+import { minorUnits, assertWalletAccess, validatePosting, reconcile } from './ledger.js';
 const entry = (walletUserId, direction, amount) => ({ walletUserId, direction, amount });
 const posting = (idempotencyKey, amount = '10.00') => ({ tenantId: 'tenant-1', operation: 'recharge', idempotencyKey, entries: [entry(1, 'debit', amount), entry(2, 'credit', amount)] });
 
