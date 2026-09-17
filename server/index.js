@@ -319,6 +319,109 @@ app.delete("/api/clients/:id", authenticate, async (req, res, next) => {
   }
 });
 
+const parsePackage = (body) => {
+  const data = {
+    name: String(body.name || "").trim(),
+    downloadMbps: Number(body.downloadMbps),
+    uploadMbps: Number(body.uploadMbps),
+    price: Number(body.price),
+    validityDays: Number(body.validityDays || 30),
+    status: body.status || "Active",
+  };
+  if (
+    !data.name ||
+    ![data.downloadMbps, data.uploadMbps, data.validityDays].every(
+      Number.isInteger,
+    ) ||
+    data.downloadMbps < 1 ||
+    data.uploadMbps < 1 ||
+    data.validityDays < 1 ||
+    !Number.isFinite(data.price) ||
+    data.price < 0
+  )
+    throw Object.assign(new Error("Package fields are invalid"), {
+      status: 422,
+    });
+  if (!["Active", "Disabled"].includes(data.status))
+    throw Object.assign(new Error("Invalid package status"), { status: 422 });
+  return data;
+};
+
+app.get("/api/packages", authenticate, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      'select id,name,download_mbps "downloadMbps",upload_mbps "uploadMbps",price,validity_days "validityDays",status,owner_role "ownerRole" from app_packages where ($1=\'Admin\' or owner_role in (\'Admin\',$1)) order by download_mbps,price',
+      [req.auth.role],
+    );
+    res.json({ data: rows, count: rows.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/packages", authenticate, async (req, res, next) => {
+  try {
+    const d = parsePackage(req.body);
+    const owner =
+      req.auth.role === "Admin" ? req.body.ownerRole || "Admin" : req.auth.role;
+    const { rows } = await pool.query(
+      'insert into app_packages(name,download_mbps,upload_mbps,price,validity_days,owner_role,status) values($1,$2,$3,$4,$5,$6,$7) returning id,name,download_mbps "downloadMbps",upload_mbps "uploadMbps",price,validity_days "validityDays",status,owner_role "ownerRole"',
+      [
+        d.name,
+        d.downloadMbps,
+        d.uploadMbps,
+        d.price,
+        d.validityDays,
+        owner,
+        d.status,
+      ],
+    );
+    res.status(201).json({ data: rows[0] });
+  } catch (error) {
+    if (error.code === "23505")
+      return res.status(409).json({ error: "Package already exists" });
+    next(error);
+  }
+});
+
+app.patch("/api/packages/:id", authenticate, async (req, res, next) => {
+  try {
+    const d = parsePackage(req.body);
+    const { rows } = await pool.query(
+      'update app_packages set name=$1,download_mbps=$2,upload_mbps=$3,price=$4,validity_days=$5,status=$6 where id=$7 and ($8=\'Admin\' or owner_role=$8) returning id,name,download_mbps "downloadMbps",upload_mbps "uploadMbps",price,validity_days "validityDays",status,owner_role "ownerRole"',
+      [
+        d.name,
+        d.downloadMbps,
+        d.uploadMbps,
+        d.price,
+        d.validityDays,
+        d.status,
+        req.params.id,
+        req.auth.role,
+      ],
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Package not found" });
+    res.json({ data: rows[0] });
+  } catch (error) {
+    if (error.code === "23505")
+      return res.status(409).json({ error: "Package already exists" });
+    next(error);
+  }
+});
+
+app.delete("/api/packages/:id", authenticate, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      "delete from app_packages where id=$1 and ($2='Admin' or owner_role=$2) returning id",
+      [req.params.id, req.auth.role],
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Package not found" });
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use((error, _req, res, _next) => {
   console.error(error);
   res
