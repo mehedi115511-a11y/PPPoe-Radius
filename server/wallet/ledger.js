@@ -1,8 +1,6 @@
-'use strict';
-
 const MAX_MINOR_UNITS = BigInt(Number.MAX_SAFE_INTEGER);
 
-function minorUnits(value) {
+export function minorUnits(value) {
   if (typeof value !== 'string' || !/^(0|[1-9]\d*)(\.\d{1,2})?$/.test(value)) throw new TypeError('Amount must be a nonnegative decimal string with at most two places');
   const [whole, fraction = ''] = value.split('.');
   const result = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
@@ -10,19 +8,19 @@ function minorUnits(value) {
   return result;
 }
 
-function requireIdentity(value, label) {
+export function requireIdentity(value, label) {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9:_-]{0,127}$/.test(value)) throw new TypeError(`Invalid ${label}`);
   return value;
 }
 
-function assertWalletAccess(actor, ownerUserId) {
+export function assertWalletAccess(actor, ownerUserId) {
   if (!actor || !Number.isSafeInteger(actor.userId) || actor.userId <= 0 || !Number.isSafeInteger(ownerUserId) || ownerUserId <= 0) throw new TypeError('Valid actor and owner identity required');
   if (actor.role === 'Admin' && actor.permissions?.includes('wallet:read:any')) return true;
   if (actor.userId !== ownerUserId) throw new Error('Wallet access denied');
   return true;
 }
 
-function validatePosting({ tenantId, operation, idempotencyKey, entries }) {
+export function validatePosting({ tenantId, operation, idempotencyKey, entries }) {
   requireIdentity(tenantId, 'tenantId');
   requireIdentity(operation, 'operation');
   requireIdentity(idempotencyKey, 'idempotencyKey');
@@ -39,7 +37,7 @@ function validatePosting({ tenantId, operation, idempotencyKey, entries }) {
   return Object.freeze({ tenantId, operation, idempotencyKey, entries: Object.freeze(validated) });
 }
 
-function reconcile(postings) {
+export function reconcile(postings) {
   if (!Array.isArray(postings)) throw new TypeError('Postings must be an array');
   const seen = new Set();
   const balances = new Map();
@@ -55,5 +53,3 @@ function reconcile(postings) {
   }
   return balances;
 }
-
-module.exports = { minorUnits, requireIdentity, assertWalletAccess, validatePosting, reconcile };
