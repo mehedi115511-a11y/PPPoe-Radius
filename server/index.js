@@ -9,6 +9,7 @@ import rateLimit from "express-rate-limit";
 import { allocateVpnAddress, validateWireGuardPublicKey } from "./vpn-address.js";
 import { renderRouterOsPeerScript } from "./vpn-config.js";
 import { revalidateSession } from "./security/session-revalidation.js";
+import { tenantScope } from "./security/tenant-queries.js";
 
 const { Pool } = pg;
 const app = express();
@@ -154,13 +155,14 @@ app.get("/api/health", async (_req, res, next) => {
 app.get("/api/dashboard", authenticate, async (req, res, next) => {
   try {
     const role = req.auth.role;
+    const scope = tenantScope(req.auth);
     const { rows } = await pool.query(
       `select count(*)::int total,
       count(*) filter(where status='Online')::int online,
       count(*) filter(where status='Offline')::int offline,
       count(*) filter(where status='Expired')::int expired
-      from app_clients where ($1='Admin' or owner_role=$1)`,
-      [role],
+      from app_clients where ${scope.sql}`,
+      scope.params,
     );
     res.json({ role, ...rows[0] });
   } catch (error) {
@@ -172,14 +174,15 @@ app.get("/api/clients", authenticate, async (req, res, next) => {
   try {
     const status = req.query.status || "All";
     const search = `%${req.query.search || ""}%`;
+    const scope = tenantScope(req.auth, '', 3);
     const { rows } = await pool.query(
       `select id,name,username "user",phone,package_name "package",
       router_name router,ip_address ip,expires_at "expiresAt",to_char(expires_at,'DD Mon YYYY') expiry,
       monthly_bill bill,status from app_clients
       where ($1='All' or status=$1) and (name ilike $2 or username ilike $2 or phone ilike $2)
-      and ($3='Admin' or owner_role=$3)
+      and ${scope.sql}
       order by id`,
-      [status, search, req.auth.role],
+      [status, search, ...scope.params],
     );
     res.json({ data: rows, count: rows.length });
   } catch (error) {
@@ -437,9 +440,10 @@ const parsePackage = (body) => {
 
 app.get("/api/packages", authenticate, async (req, res, next) => {
   try {
+    const scope = tenantScope(req.auth);
     const { rows } = await pool.query(
-      'select id,name,download_mbps "downloadMbps",upload_mbps "uploadMbps",price,validity_days "validityDays",status,owner_role "ownerRole" from app_packages where ($1=\'Admin\' or owner_role in (\'Admin\',$1)) order by download_mbps,price',
-      [req.auth.role],
+      `select id,name,download_mbps "downloadMbps",upload_mbps "uploadMbps",price,validity_days "validityDays",status,owner_role "ownerRole" from app_packages where ${scope.sql} order by download_mbps,price`,
+      scope.params,
     );
     res.json({ data: rows, count: rows.length });
   } catch (error) {

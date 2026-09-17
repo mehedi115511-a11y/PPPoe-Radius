@@ -12,6 +12,8 @@ describe('fail-closed ownership', () => {
   it('isolates same-role resellers and denies stale or impersonated admin', () => {
     expect(tenantScope(a)).toEqual({ sql: 'owner_user_id = $1', params: [2] });
     expect(tenantScope(b).params).toEqual([3]);
+    expect(tenantScope(a, '', 3)).toEqual({ sql: 'owner_user_id = $3', params: [2] });
+    expect(() => tenantScope(a, '', 0)).toThrow();
     expect(requireReconciledOwner(a, 3)).toBe(false);
     expect(requireReconciledOwner(b, 2)).toBe(false);
     expect(() => tenantScope({ ...a, status: 'Suspended' })).toThrow();
