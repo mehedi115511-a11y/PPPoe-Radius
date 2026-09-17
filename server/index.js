@@ -66,9 +66,9 @@ app.get('/api/health',async(_req,res,next)=>{
   try{const {rows}=await pool.query('select now() server_time');res.json({status:'ok',database:'ok',serverTime:rows[0].server_time});}catch(error){next(error);}
 });
 
-app.get('/api/dashboard',async(req,res,next)=>{
+app.get('/api/dashboard',authenticate,async(req,res,next)=>{
   try{
-    const role=req.query.role||'Admin';
+    const role=req.auth.role;
     const {rows}=await pool.query(`select count(*)::int total,
       count(*) filter(where status='Online')::int online,
       count(*) filter(where status='Offline')::int offline,
@@ -78,7 +78,7 @@ app.get('/api/dashboard',async(req,res,next)=>{
   }catch(error){next(error);}
 });
 
-app.get('/api/clients',async(req,res,next)=>{
+app.get('/api/clients',authenticate,async(req,res,next)=>{
   try{
     const status=req.query.status||'All';
     const search=`%${req.query.search||''}%`;
@@ -86,12 +86,57 @@ app.get('/api/clients',async(req,res,next)=>{
       router_name router,ip_address ip,to_char(expires_at,'DD Mon YYYY') expiry,
       monthly_bill bill,status from app_clients
       where ($1='All' or status=$1) and (name ilike $2 or username ilike $2 or phone ilike $2)
-      order by id`,[status,search]);
+      and ($3='Admin' or owner_role=$3)
+      order by id`,[status,search,req.auth.role]);
     res.json({data:rows,count:rows.length});
   }catch(error){next(error);}
 });
 
-app.use((error,_req,res,_next)=>{console.error(error);res.status(500).json({error:'Internal server error'});});
+const parseClient=body=>{
+  const data={name:String(body.name||'').trim(),username:String(body.username||'').trim(),phone:String(body.phone||'').trim(),packageName:String(body.package||'').trim(),routerName:String(body.router||'').trim(),ipAddress:body.ip||null,expiresAt:body.expiresAt,monthlyBill:Number(body.monthlyBill),status:body.status||'Offline'};
+  if(!data.name||!data.username||!data.phone||!data.packageName||!data.routerName||!data.expiresAt||!Number.isFinite(data.monthlyBill)||data.monthlyBill<0)throw Object.assign(new Error('Required client fields are invalid'),{status:422});
+  if(!['Online','Offline','Expired'].includes(data.status))throw Object.assign(new Error('Invalid client status'),{status:422});
+  return data;
+};
+const returnedClient='id,name,username "user",phone,package_name "package",router_name router,ip_address ip,to_char(expires_at,\'DD Mon YYYY\') expiry,monthly_bill bill,status';
+
+app.post('/api/clients',authenticate,async(req,res,next)=>{
+  try{
+    const d=parseClient(req.body);
+    const owner=req.auth.role==='Admin'?(req.body.ownerRole||'Admin'):req.auth.role;
+    if(!['Admin','Reseller','Sub-reseller'].includes(owner))return res.status(422).json({error:'Invalid owner role'});
+    const sql='insert into app_clients(name,username,phone,package_name,router_name,ip_address,expires_at,monthly_bill,status,owner_role) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning '+returnedClient;
+    const {rows}=await pool.query(sql,[d.name,d.username,d.phone,d.packageName,d.routerName,d.ipAddress,d.expiresAt,d.monthlyBill,d.status,owner]);
+    await pool.query('insert into app_client_history(client_id,action,snapshot,actor_user_id) values($1,\'Created\',$2,$3)',[rows[0].id,rows[0],req.auth.id]);
+    res.status(201).json({data:rows[0]});
+  }catch(error){if(error.code==='23505')return res.status(409).json({error:'Username already exists'});next(error);}
+});
+
+app.patch('/api/clients/:id',authenticate,async(req,res,next)=>{
+  const db=await pool.connect();
+  try{
+    const d=parseClient(req.body);await db.query('begin');
+    const {rows:old}=await db.query('select * from app_clients where id=$1 and ($2=\'Admin\' or owner_role=$2) for update',[req.params.id,req.auth.role]);
+    if(!old[0]){await db.query('rollback');return res.status(404).json({error:'Client not found'});}
+    await db.query('insert into app_client_history(client_id,action,snapshot,actor_user_id) values($1,\'Updated\',$2,$3)',[req.params.id,old[0],req.auth.id]);
+    const sql='update app_clients set name=$1,username=$2,phone=$3,package_name=$4,router_name=$5,ip_address=$6,expires_at=$7,monthly_bill=$8,status=$9 where id=$10 returning '+returnedClient;
+    const {rows}=await db.query(sql,[d.name,d.username,d.phone,d.packageName,d.routerName,d.ipAddress,d.expiresAt,d.monthlyBill,d.status,req.params.id]);
+    await db.query('commit');res.json({data:rows[0]});
+  }catch(error){await db.query('rollback');if(error.code==='23505')return res.status(409).json({error:'Username already exists'});next(error);}finally{db.release();}
+});
+
+app.delete('/api/clients/:id',authenticate,async(req,res,next)=>{
+  const db=await pool.connect();
+  try{
+    await db.query('begin');
+    const {rows}=await db.query('delete from app_clients where id=$1 and ($2=\'Admin\' or owner_role=$2) returning *',[req.params.id,req.auth.role]);
+    if(!rows[0]){await db.query('rollback');return res.status(404).json({error:'Client not found'});}
+    await db.query('insert into app_client_history(client_id,action,snapshot,actor_user_id) values($1,\'Deleted\',$2,$3)',[req.params.id,rows[0],req.auth.id]);
+    await db.query('commit');res.status(204).end();
+  }catch(error){await db.query('rollback');next(error);}finally{db.release();}
+});
+
+app.use((error,_req,res,_next)=>{console.error(error);res.status(error.status||500).json({error:error.status?error.message:'Internal server error'});});
 const server=app.listen(port,'127.0.0.1',()=>console.log(`PPPoE API listening on ${port}`));
 const shutdown=()=>server.close(()=>pool.end().finally(()=>process.exit(0)));
 process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);

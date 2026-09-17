@@ -37,6 +37,16 @@ create table if not exists app_impersonation_audit(
 );
 create index if not exists app_impersonation_audit_admin_idx on app_impersonation_audit(admin_user_id,started_at desc);
 
+create table if not exists app_client_history(
+  id bigserial primary key,
+  client_id bigint not null,
+  action text not null check(action in('Created','Updated','Deleted')),
+  snapshot jsonb not null,
+  actor_user_id bigint references app_users(id),
+  created_at timestamptz not null default now()
+);
+create index if not exists app_client_history_client_idx on app_client_history(client_id,created_at desc);
+
 insert into app_clients(name,username,phone,package_name,router_name,ip_address,expires_at,monthly_bill,status,owner_role)
 values
  ('Saifan Net 1021','saifan-net-1021','01700-000001','20 Mbps','Dhaka-Core-01','10.22.4.18','2026-10-17',800,'Online','Reseller'),
