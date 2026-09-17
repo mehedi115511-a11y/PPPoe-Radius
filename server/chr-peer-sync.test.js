@@ -61,6 +61,27 @@ test('enable compensates a verified created peer when readback is wrong', async 
   expect(peers()).toEqual([]);
 });
 
+test('disable compensates when CHR readback reports wrong state', async () => {
+  const { adapter, peers } = mock([{ id: 'p', publicKey, allowedAddress: '10.78.0.2/32', disabled: false }]);
+  let reads = 0;
+  const originalList = adapter.listPeers;
+  adapter.listPeers = vi.fn(async () => {
+    reads += 1;
+    const current = await originalList();
+    return reads === 2 ? current.map((item) => ({ ...item, disabled: false })) : current;
+  });
+  await expect(createChrPeerSync(adapter).disable(peer)).rejects.toThrow('readback mismatch');
+  expect(adapter.setPeer).toHaveBeenCalledTimes(2);
+  expect(peers()[0].disabled).toBe(false);
+});
+
+test('disable reports unverified compensation if rollback fails', async () => {
+  const { adapter } = mock([{ id: 'p', publicKey, allowedAddress: '10.78.0.2/32', disabled: false }]);
+  adapter.listPeers = vi.fn().mockResolvedValueOnce([{ id: 'p', publicKey, allowedAddress: '10.78.0.2/32', disabled: false }]).mockResolvedValueOnce([]);
+  adapter.setPeer = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('rollback failed'));
+  await expect(createChrPeerSync(adapter).disable(peer)).rejects.toThrow('compensation unverified');
+});
+
 test('readback unavailable, malformed peer and missing adapter fail closed', async () => {
   expect(() => createChrPeerSync({})).toThrow('missing');
   const { adapter } = mock();
