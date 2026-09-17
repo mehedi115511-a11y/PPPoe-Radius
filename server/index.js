@@ -7,6 +7,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
 import { allocateVpnAddress, validateWireGuardPublicKey } from "./vpn-address.js";
+import { renderRouterOsPeerScript } from "./vpn-config.js";
 
 const { Pool } = pg;
 const app = express();
@@ -505,6 +506,18 @@ app.delete("/api/packages/:id", authenticate, async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+// Downloadable manual CHR peer command: public information only, not an activation.
+app.get("/api/admin/vpn/peers/:id/routeros-script", authenticate, requireAdmin, async (req, res, next) => {
+ if (!/^[1-9][0-9]*$/.test(req.params.id)) return res.status(422).json({ error: "Invalid peer ID" });
+ try {
+  const { rows } = await pool.query('select public_key "publicKey", host(tunnel_ip) "tunnelIp", status from vpn_peers where id=$1',[req.params.id]);
+  if (!rows[0] || rows[0].status === "Revoked") return res.status(404).json({ error: "Available peer not found" });
+  const script = renderRouterOsPeerScript(rows[0]);
+  res.set("Cache-Control", "no-store");
+  res.type("text/plain; charset=utf-8").send(`# Manual CHR-side peer command; NOT YET APPLIED\n${script}\n`);
+ } catch (error) { next(error); }
 });
 
 // Registry remains Pending until an independently verified CHR sync is available.
