@@ -1,0 +1,54 @@
+import { expect, test, vi } from 'vitest';
+import { createChrPeerSync } from './chr-peer-sync.js';
+
+const publicKey = Buffer.alloc(32, 9).toString('base64');
+const peer = { publicKey, tunnelIp: '10.78.0.2' };
+function mock(initial = []) {
+  let peers = structuredClone(initial);
+  const adapter = {
+    listPeers: vi.fn(async () => structuredClone(peers)),
+    addPeer: vi.fn(async (data) => { peers.push({ id: 'peer-1', ...data }); }),
+    setPeer: vi.fn(async (id, patch) => { peers = peers.map((item) => item.id === id ? { ...item, ...patch } : item); }),
+    removePeer: vi.fn(async (id) => { peers = peers.filter((item) => item.id !== id); }),
+  };
+  return { adapter, peers: () => peers };
+}
+
+test('enable creates, verifies and retries idempotently', async () => {
+  const { adapter } = mock();
+  const sync = createChrPeerSync(adapter);
+  await expect(sync.enable(peer)).resolves.toMatchObject({ allowedAddress: '10.78.0.2/32', disabled: false });
+  await sync.enable(peer);
+  expect(adapter.addPeer).toHaveBeenCalledTimes(1);
+});
+
+test('disable and revoke verify state and tolerate revoke retry', async () => {
+  const { adapter } = mock([{ id: 'p', publicKey, allowedAddress: '10.78.0.2/32', disabled: false }]);
+  const sync = createChrPeerSync(adapter);
+  await expect(sync.disable(peer)).resolves.toMatchObject({ disabled: true });
+  await sync.disable(peer);
+  expect(adapter.setPeer).toHaveBeenCalledTimes(1);
+  await expect(sync.revoke(peer)).resolves.toEqual({ revoked: true });
+  await sync.revoke(peer);
+  expect(adapter.removePeer).toHaveBeenCalledTimes(1);
+});
+
+test('rejects existing key/address conflicts without writes', async () => {
+  const { adapter } = mock([{ id: 'other', publicKey: Buffer.alloc(32, 8).toString('base64'), allowedAddress: '10.78.0.2/32', disabled: false }]);
+  await expect(createChrPeerSync(adapter).enable(peer)).rejects.toThrow('duplicate');
+  expect(adapter.addPeer).not.toHaveBeenCalled();
+});
+
+test('readback mismatch fails closed after adapter claims success', async () => {
+  const { adapter } = mock();
+  adapter.addPeer = vi.fn(async () => undefined);
+  await expect(createChrPeerSync(adapter).enable(peer)).rejects.toThrow('readback mismatch');
+});
+
+test('readback unavailable, malformed peer and missing adapter fail closed', async () => {
+  expect(() => createChrPeerSync({})).toThrow('missing');
+  const { adapter } = mock();
+  adapter.listPeers = vi.fn(async () => null);
+  await expect(createChrPeerSync(adapter).enable(peer)).rejects.toThrow('unavailable');
+  await expect(createChrPeerSync(mock().adapter).enable({ ...peer, tunnelIp: '10.78.0.255' })).rejects.toThrow('Invalid');
+});
