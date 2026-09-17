@@ -48,17 +48,15 @@ export function createChrPeerSync(adapter) {
         }
         return await verify(peer.publicKey, [(item) => item.allowedAddress === allowedAddress && item.disabled === false]);
       } catch (error) {
-        // Only compensate changes conclusively made by this invocation. An ambiguous
-        // add failure requires reconciliation, not deletion of a possibly foreign peer.
+        // An ambiguous add failure needs reconciliation, not deletion of a foreign peer.
         try {
           if (created) {
             const candidates = match(await list(), peer.publicKey);
-            if (candidates.length === 1 && candidates[0].allowedAddress === allowedAddress) {
-              await adapter.removePeer(candidates[0].id);
-              await verify(peer.publicKey, []);
-            } else {
+            if (candidates.length !== 1 || candidates[0].allowedAddress !== allowedAddress) {
               throw new Error('CHR enable compensation requires manual reconciliation');
             }
+            await adapter.removePeer(candidates[0].id);
+            await verify(peer.publicKey, []);
           } else if (previousDisabled !== undefined) {
             await adapter.setPeer(found[0].id, { disabled: previousDisabled });
             await verify(peer.publicKey, [(item) => item.allowedAddress === allowedAddress && item.disabled === previousDisabled]);
@@ -70,16 +68,31 @@ export function createChrPeerSync(adapter) {
       }
     },
     async disable(peer) {
-      validate(peer);
+      const allowedAddress = validate(peer);
       const found = match(await list(), peer.publicKey);
-      if (found.length !== 1 || found[0].allowedAddress !== `${peer.tunnelIp}/32`) throw new Error('CHR peer missing or conflicting');
-      if (found[0].disabled !== true) await adapter.setPeer(found[0].id, { disabled: true });
-      return verify(peer.publicKey, [(item) => item.allowedAddress === `${peer.tunnelIp}/32` && item.disabled === true]);
+      if (found.length !== 1 || found[0].allowedAddress !== allowedAddress) throw new Error('CHR peer missing or conflicting');
+      if (found[0].disabled === true) return verify(peer.publicKey, [(item) => item.allowedAddress === allowedAddress && item.disabled === true]);
+      let changed = false;
+      try {
+        await adapter.setPeer(found[0].id, { disabled: true });
+        changed = true;
+        return await verify(peer.publicKey, [(item) => item.allowedAddress === allowedAddress && item.disabled === true]);
+      } catch (error) {
+        if (changed) {
+          try {
+            await adapter.setPeer(found[0].id, { disabled: found[0].disabled });
+            await verify(peer.publicKey, [(item) => item.allowedAddress === allowedAddress && item.disabled === found[0].disabled]);
+          } catch (compensationError) {
+            throw new AggregateError([error, compensationError], 'CHR disable failed; compensation unverified');
+          }
+        }
+        throw error;
+      }
     },
     async revoke(peer) {
-      validate(peer);
+      const allowedAddress = validate(peer);
       const found = match(await list(), peer.publicKey);
-      if (found.length > 1 || (found.length === 1 && found[0].allowedAddress !== `${peer.tunnelIp}/32`)) throw new Error('CHR peer conflict');
+      if (found.length > 1 || (found.length === 1 && found[0].allowedAddress !== allowedAddress)) throw new Error('CHR peer conflict');
       if (found.length === 1) await adapter.removePeer(found[0].id);
       await verify(peer.publicKey, []);
       return { revoked: true };
