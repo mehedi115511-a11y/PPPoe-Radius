@@ -281,12 +281,13 @@ app.post("/api/clients", authenticate, async (req, res, next) => {
       return res
         .status(422)
         .json({ error: "PPPoE password must contain at least 6 characters" });
-    const owner =
-      req.auth.role === "Admin" ? req.body.ownerRole || "Admin" : req.auth.role;
+    const owner = req.auth.role;
+    if (req.body.ownerRole && req.body.ownerRole !== owner)
+      return res.status(403).json({ error: "Explicit owner mapping required" });
     if (!["Admin", "Reseller", "Sub-reseller"].includes(owner))
       return res.status(422).json({ error: "Invalid owner role" });
     const sql =
-      "insert into app_clients(name,username,phone,package_name,router_name,ip_address,expires_at,monthly_bill,status,owner_role) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning " +
+      "insert into app_clients(name,username,phone,package_name,router_name,ip_address,expires_at,monthly_bill,status,owner_role,owner_user_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning " +
       returnedClient;
     await db.query("begin");
     const { rows } = await db.query(sql, [
@@ -300,6 +301,7 @@ app.post("/api/clients", authenticate, async (req, res, next) => {
       d.monthlyBill,
       d.status,
       owner,
+      req.auth.id,
     ]);
     await syncRadiusUser(db, d);
     await db.query(
@@ -322,10 +324,11 @@ app.patch("/api/clients/:id", authenticate, async (req, res, next) => {
   const db = await pool.connect();
   try {
     const d = parseClient(req.body);
+    const scope = tenantScope(req.auth, "", 2);
     await db.query("begin");
     const { rows: old } = await db.query(
-      "select * from app_clients where id=$1 and ($2='Admin' or owner_role=$2) for update",
-      [req.params.id, req.auth.role],
+      `select * from app_clients where id=$1 and ${scope.sql} for update`,
+      [req.params.id, ...scope.params],
     );
     if (!old[0]) {
       await db.query("rollback");
@@ -378,10 +381,11 @@ app.patch("/api/clients/:id", authenticate, async (req, res, next) => {
 app.delete("/api/clients/:id", authenticate, async (req, res, next) => {
   const db = await pool.connect();
   try {
+    const scope = tenantScope(req.auth, "", 2);
     await db.query("begin");
     const { rows } = await db.query(
-      "delete from app_clients where id=$1 and ($2='Admin' or owner_role=$2) returning *",
-      [req.params.id, req.auth.role],
+      `delete from app_clients where id=$1 and ${scope.sql} returning *`,
+      [req.params.id, ...scope.params],
     );
     if (!rows[0]) {
       await db.query("rollback");
@@ -454,10 +458,11 @@ app.get("/api/packages", authenticate, async (req, res, next) => {
 app.post("/api/packages", authenticate, async (req, res, next) => {
   try {
     const d = parsePackage(req.body);
-    const owner =
-      req.auth.role === "Admin" ? req.body.ownerRole || "Admin" : req.auth.role;
+    const owner = req.auth.role;
+    if (req.body.ownerRole && req.body.ownerRole !== owner)
+      return res.status(403).json({ error: "Explicit owner mapping required" });
     const { rows } = await pool.query(
-      'insert into app_packages(name,download_mbps,upload_mbps,price,validity_days,owner_role,status) values($1,$2,$3,$4,$5,$6,$7) returning id,name,download_mbps "downloadMbps",upload_mbps "uploadMbps",price,validity_days "validityDays",status,owner_role "ownerRole"',
+      'insert into app_packages(name,download_mbps,upload_mbps,price,validity_days,owner_role,status,owner_user_id) values($1,$2,$3,$4,$5,$6,$7,$8) returning id,name,download_mbps "downloadMbps",upload_mbps "uploadMbps",price,validity_days "validityDays",status,owner_role "ownerRole"',
       [
         d.name,
         d.downloadMbps,
@@ -466,6 +471,7 @@ app.post("/api/packages", authenticate, async (req, res, next) => {
         d.validityDays,
         owner,
         d.status,
+        req.auth.id,
       ],
     );
     res.status(201).json({ data: rows[0] });
@@ -479,8 +485,9 @@ app.post("/api/packages", authenticate, async (req, res, next) => {
 app.patch("/api/packages/:id", authenticate, async (req, res, next) => {
   try {
     const d = parsePackage(req.body);
+    const scope = tenantScope(req.auth, "", 8);
     const { rows } = await pool.query(
-      'update app_packages set name=$1,download_mbps=$2,upload_mbps=$3,price=$4,validity_days=$5,status=$6 where id=$7 and ($8=\'Admin\' or owner_role=$8) returning id,name,download_mbps "downloadMbps",upload_mbps "uploadMbps",price,validity_days "validityDays",status,owner_role "ownerRole"',
+      `update app_packages set name=$1,download_mbps=$2,upload_mbps=$3,price=$4,validity_days=$5,status=$6 where id=$7 and ${scope.sql} returning id,name,download_mbps "downloadMbps",upload_mbps "uploadMbps",price,validity_days "validityDays",status,owner_role "ownerRole"`,
       [
         d.name,
         d.downloadMbps,
@@ -489,7 +496,7 @@ app.patch("/api/packages/:id", authenticate, async (req, res, next) => {
         d.validityDays,
         d.status,
         req.params.id,
-        req.auth.role,
+        ...scope.params,
       ],
     );
     if (!rows[0]) return res.status(404).json({ error: "Package not found" });
@@ -503,9 +510,10 @@ app.patch("/api/packages/:id", authenticate, async (req, res, next) => {
 
 app.delete("/api/packages/:id", authenticate, async (req, res, next) => {
   try {
+    const scope = tenantScope(req.auth, "", 2);
     const { rows } = await pool.query(
-      "delete from app_packages where id=$1 and ($2='Admin' or owner_role=$2) returning id",
-      [req.params.id, req.auth.role],
+      `delete from app_packages where id=$1 and ${scope.sql} returning id`,
+      [req.params.id, ...scope.params],
     );
     if (!rows[0]) return res.status(404).json({ error: "Package not found" });
     res.status(204).end();
