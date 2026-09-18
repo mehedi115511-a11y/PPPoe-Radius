@@ -24,10 +24,12 @@ export async function applyPeerOperation(pool, sync, input) {
   try {
     await db.query("BEGIN");
     await db.query("select pg_advisory_xact_lock(778002,$1)",[peerId]);
-    const found=await db.query(`select id,public_key "publicKey",host(tunnel_ip) "tunnelIp",status
+    const found=await db.query(`select id,public_key "publicKey",host(tunnel_ip) "tunnelIp",status,protocol
       from vpn_peers where id=$1 for update`,[peerId]);
     const peer=found.rows[0];
     if (!peer) throw Object.assign(new Error("Peer not found"),{status:404});
+    if (peer.protocol && peer.protocol !== "wireguard")
+      throw Object.assign(new Error("Peer uses protocol-specific activation"),{status:409});
     if (!allowed[operation].has(peer.status)) throw Object.assign(new Error(`Peer cannot ${operation.toLowerCase()} from ${peer.status}`),{status:409});
     const readback=await sync[operation.toLowerCase()](peer);
     const updated=await db.query(`update vpn_peers set status=$2,last_synced_at=now(),last_sync_error=null,
@@ -64,7 +66,7 @@ export async function reconcilePeers(pool, sync, actorUserId) {
   const actorId=validId(actorUserId,"actor ID");
   if (typeof sync?.list !== "function") throw new TypeError("CHR readback required");
   const [registryResult,chrPeers]=await Promise.all([
-    pool.query(`select id,public_key "publicKey",host(tunnel_ip) "tunnelIp",status from vpn_peers order by id`),
+    pool.query(`select id,public_key "publicKey",host(tunnel_ip) "tunnelIp",status from vpn_peers where protocol='wireguard' order by id`),
     sync.list(),
   ]);
   const registry=registryResult.rows;
