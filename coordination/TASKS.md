@@ -1,34 +1,35 @@
 # Central Task Board
 
-GitHub is the source of truth for Chat A, Chat B, and Chat C.
+GitHub is the source of truth. The former Chat A, B, and C lanes are now managed sequentially by one unified engineer while their branches and history remain preserved.
 
-## Ownership
-- Chat A — Tasks 01–23: Network, VPN, MikroTik, NAS/router services.
-- Chat B — Tasks 24–43: Client, package, sessions, accounting, recharge, expiry, billing.
-- Chat C — Tasks 44–65: Wallet, portal, security, QA, integration, release.
+## Historical branch scopes
+- `chat-a/network-vpn` — Tasks 01–23: Network, VPN, MikroTik, NAS/router services.
+- `chat-b/core-billing` — Tasks 24–43: Client, package, sessions, accounting, recharge, expiry, billing.
+- `chat-c/integration-release` — Tasks 44–65 plus controlled integration and release.
 
 ## Bootstrap ancestry checkpoints
-These are known-good baseline ancestors, not exact current HEAD values. Coordination-only commits will make HEAD differ. Validate with `git merge-base --is-ancestor <checkpoint> HEAD`; do not report a blocker merely because `HEAD` is newer.
+These are known-good baseline ancestors, not exact current HEAD values. Validate ancestry; a newer HEAD is not a blocker.
 - main baseline: a4c749f359d60a2eafea757316486f87f03c973e
-- Chat A baseline: aad1cc61c4e0c9a95b22b97fd5d191a6f528335a
-- Chat B baseline: 4c6833c78fd361408090a8c7a803c71ad96a2552
-- Chat C baseline: a4c749f359d60a2eafea757316486f87f03c973e
+- Network baseline: aad1cc61c4e0c9a95b22b97fd5d191a6f528335a
+- Core baseline: 4c6833c78fd361408090a8c7a803c71ad96a2552
+- Integration baseline: a4c749f359d60a2eafea757316486f87f03c973e
 
-## Current status
-- GitHub history import: COMPLETE
-- Task 24: IN_PROGRESS — Chat B owns the shared client/package/accounting/billing schema contract.
-- Task 44: IN_PROGRESS — Chat C may continue wallet/service/security audit and tests that do not change the locked shared schema.
-- Task 44 shared-schema portion: WAITING_DEPENDENCY until Chat B publishes its schema commit and marks Task 24 READY_FOR_REVIEW.
-- Production: UNCHANGED. No feature chat may deploy.
+## Current verified status
+- GitHub history import: COMPLETE.
+- Network lane: IN_PROGRESS; latest mocked CHR suite previously passed 27/27, live authenticated RouterOS integration remains.
+- Task 24 tenant security: VERIFIED in isolated DB/API tests and merged into integration branch at d29f6c62259d505885eb9f4bcbddc7248a3fda3c.
+- Task 24 production reconciliation: WAITING_APPROVAL; exact legacy mapping, backup, deployment lock and rollback are required before production migration.
+- Task 44 wallet ledger: IN_PROGRESS on integration branch. Migration 009, immutable ledger and atomic wallet service are implemented in isolated form; 34/34 combined tests and wallet concurrency integration pass at 7bf3d177e822c4aba20a9b21948bdc0ce5ce9307.
+- Production: UNCHANGED. No production deploy or migration is authorized.
 
 ## Target VPS route
 Use Remote Desktop Commander device `NextGan-WiFi`, then:
 `ssh -i /root/.ssh/pppoe_radius_vps_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes root@149.104.71.83`
 
 Worktrees:
-- Chat A: `/opt/pppoe-radius-chat-a`
-- Chat B: `/opt/pppoe-radius-chat-b`
-- Chat C: `/opt/pppoe-radius-chat-c`
-- Production: `/opt/pppoe-radius-integration` (read-only unless deployment is explicitly approved)
+- Network: `/opt/pppoe-radius-chat-a`
+- Core: `/opt/pppoe-radius-chat-b`
+- Integration: `/opt/pppoe-radius-chat-c`
+- Production: `/opt/pppoe-radius-integration` (read-only until explicit deployment approval)
 
 Status flow: TODO → IN_PROGRESS → WAITING_DEPENDENCY/BLOCKED → READY_FOR_REVIEW → VERIFIED → MERGED → DEPLOYED.
