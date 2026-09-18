@@ -1,0 +1,1 @@
+import{execFileSync}from"node:child_process";import fs from"node:fs";const p=JSON.parse(fs.readFileSync("package.json","utf8")),name=`pppoe-radius-${p.version}.tar.gz`;execFileSync("git",["archive","--format=tar.gz",`--prefix=pppoe-radius-${p.version}/`,"-o",name,"HEAD"],{stdio:"inherit"});console.log(`Created ${name}; no .env, node_modules, dist or untracked secrets included`);
