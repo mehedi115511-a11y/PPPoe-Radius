@@ -28,6 +28,9 @@ export function createChrPeerSync(adapter) {
     return `${peer.tunnelIp}/32`;
   };
   return {
+    async list() {
+      return list();
+    },
     async enable(peer) {
       const allowedAddress = validate(peer);
       const peers = await list();

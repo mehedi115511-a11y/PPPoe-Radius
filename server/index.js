@@ -10,7 +10,7 @@ import { allocateVpnAddress, validateWireGuardPublicKey } from "./vpn-address.js
 import { renderRouterOsPeerScript } from "./vpn-config.js";
 import { createChrPeerSync } from "./chr-peer-sync.js";
 import { routerOsRestAdapterFromEnv } from "./routeros-rest-adapter.js";
-import { applyPeerOperation } from "./vpn-peer-service.js";
+import { applyPeerOperation, reconcilePeers } from "./vpn-peer-service.js";
 
 const { Pool } = pg;
 const app = express();
@@ -573,6 +573,11 @@ app.post("/api/admin/vpn/peers", authenticate, requireAdmin, async (req, res, ne
   } finally { client?.release(); }
 });
 
+app.post("/api/admin/vpn/peers/reconcile", authenticate, requireAdmin, async (req,res,next) => {
+  try {
+    res.json({data:await reconcilePeers(pool,configuredChrSync(),req.auth.id)});
+  } catch(error) { next(error); }
+});
 app.post("/api/admin/vpn/peers/:id/sync", authenticate, requireAdmin, peerOperation("Enable"));
 app.post("/api/admin/vpn/peers/:id/disable", authenticate, requireAdmin, peerOperation("Disable"));
 app.post("/api/admin/vpn/peers/:id/revoke", authenticate, requireAdmin, peerOperation("Revoke"));
