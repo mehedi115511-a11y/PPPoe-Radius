@@ -149,6 +149,7 @@ const nav = [
       ["Packages", Package],
       ["IP Pools", Network],
       ["Routers / NAS", Server],
+      ["VPN", ShieldCheck],
       ["RADIUS Monitor", RadioTower],
     ],
   ],
@@ -892,6 +893,56 @@ function Packages() {
     </div>
   );
 }
+function VpnManagement() {
+  const [items,setItems]=useState([]),[name,setName]=useState(""),[routerOsMajor,setRouterOsMajor]=useState("7"),
+    [script,setScript]=useState(""),[error,setError]=useState(""),[loading,setLoading]=useState(false);
+  const load=()=>apiGet("/api/admin/vpn/peers").then(r=>setItems(r.data)).catch(e=>setError(e.message));
+  useEffect(()=>{ load(); },[]);
+  const create=async(event)=>{
+    event.preventDefault(); setLoading(true); setError(""); setScript("");
+    try {
+      const response=await apiSend("/api/admin/vpn/peers","POST",{name,routerOsMajor:Number(routerOsMajor)});
+      setScript(response.data.script); setName(""); await load();
+    } catch(e) { setError(e.message); } finally { setLoading(false); }
+  };
+  const action=async(id,operation)=>{
+    try { await apiSend(`/api/admin/vpn/peers/${id}/${operation}`,"POST"); await load(); }
+    catch(e) { setError(e.message); }
+  };
+  const download=()=>{
+    const url=URL.createObjectURL(new Blob([script],{type:"text/plain"}));
+    const link=document.createElement("a"); link.href=url; link.download="nextgan-vpn.rsc"; link.click(); URL.revokeObjectURL(url);
+  };
+  return <div className="content">
+    <section className="page-title"><div><h1>VPN</h1><p>Create RouterOS 6 or 7 ready-to-paste VPN configurations</p></div></section>
+    {error&&<div className="data-warning">{error}</div>}
+    <section className="panel vpn-create">
+      <h2>Create VPN</h2>
+      <form onSubmit={create} className="vpn-form">
+        <label>VPN Name<input value={name} onChange={e=>setName(e.target.value)} required minLength="3" placeholder="Branch Router"/></label>
+        <label>RouterOS Version<select value={routerOsMajor} onChange={e=>setRouterOsMajor(e.target.value)}>
+          <option value="7">RouterOS 7 — WireGuard</option>
+          <option value="6">RouterOS 6 — L2TP/IPsec</option>
+        </select></label>
+        <button className="quick" disabled={loading}>{loading?"Creating…":"Create VPN & Script"}</button>
+      </form>
+    </section>
+    {script&&<section className="panel vpn-script">
+      <div className="panel-title"><div><h2>One-time MikroTik Script</h2><p>Copy or download now. The private credential is not shown again.</p></div>
+        <div><button onClick={()=>navigator.clipboard.writeText(script)}>Copy Script</button><button className="quick" onClick={download}>Download .rsc</button></div>
+      </div>
+      <pre>{script}</pre>
+    </section>}
+    <section className="panel"><div className="panel-title"><div><h2>VPN Connections</h2><p>RouterOS version, protocol and synchronization state</p></div>
+      <button onClick={()=>apiSend("/api/admin/vpn/peers/reconcile","POST").then(load).catch(e=>setError(e.message))}>Reconcile</button></div>
+      <div className="table-wrap"><table><thead><tr><th>Name</th><th>RouterOS</th><th>Protocol</th><th>VPN IP</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>{items.map(peer=><tr key={peer.id}><td>{peer.name}</td><td>OS {peer.routerOsMajor}</td><td>{peer.protocol}</td><td>{peer.tunnelIp}</td><td>{peer.status}</td>
+       <td>{peer.protocol==="wireguard"&&<><button onClick={()=>action(peer.id,"sync")}>Connect</button><button onClick={()=>action(peer.id,"disable")}>Disable</button></>}<button onClick={()=>action(peer.id,"revoke")}>Revoke</button></td>
+      </tr>)}</tbody></table></div>
+    </section>
+  </div>;
+}
+
 function Simple({ name }) {
   return (
     <div className="content">
@@ -925,6 +976,8 @@ export function App() {
       <Clients />
     ) : active === "Packages" ? (
       <Packages />
+    ) : active === "VPN" ? (
+      <VpnManagement />
     ) : (
       <Simple name={active} />
     );
