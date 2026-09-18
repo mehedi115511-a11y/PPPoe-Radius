@@ -9,7 +9,7 @@ import rateLimit from "express-rate-limit";
 import { allocateVpnAddress, validateWireGuardPublicKey } from "./vpn-address.js";
 import { renderRouterOsPeerScript } from "./vpn-config.js";
 import { revalidateSession } from "./security/session-revalidation.js";
-import { tenantScope } from "./security/tenant-queries.js";
+import { tenantScope, resolveTenantPackage } from "./security/tenant-queries.js";
 
 const { Pool } = pg;
 const app = express();
@@ -176,7 +176,7 @@ app.get("/api/clients", authenticate, async (req, res, next) => {
     const search = `%${req.query.search || ""}%`;
     const scope = tenantScope(req.auth, '', 3);
     const { rows } = await pool.query(
-      `select id,name,username "user",phone,package_name "package",
+      `select id,name,username "user",phone,package_name "package",package_id "packageId",
       router_name router,ip_address ip,expires_at "expiresAt",to_char(expires_at,'DD Mon YYYY') expiry,
       monthly_bill bill,status from app_clients
       where ($1='All' or status=$1) and (name ilike $2 or username ilike $2 or phone ilike $2)
@@ -196,6 +196,7 @@ const parseClient = (body) => {
     username: String(body.username || "").trim(),
     phone: String(body.phone || "").trim(),
     packageName: String(body.package || "").trim(),
+    packageId: body.packageId,
     routerName: String(body.router || "").trim(),
     ipAddress: body.ip || null,
     expiresAt: body.expiresAt,
@@ -208,7 +209,8 @@ const parseClient = (body) => {
     !data.name ||
     !data.username ||
     !data.phone ||
-    !data.packageName ||
+    !/^[1-9][0-9]*$/.test(String(data.packageId)) ||
+    !Number.isSafeInteger(Number(data.packageId)) ||
     !data.routerName ||
     !data.expiresAt ||
     !Number.isFinite(data.monthlyBill) ||
@@ -231,21 +233,16 @@ const parseClient = (body) => {
   return data;
 };
 const returnedClient =
-  'id,name,username "user",phone,package_name "package",router_name router,ip_address ip,expires_at "expiresAt",to_char(expires_at,\'DD Mon YYYY\') expiry,monthly_bill bill,status';
+  'id,name,username "user",phone,package_name "package",package_id "packageId",router_name router,ip_address ip,expires_at "expiresAt",to_char(expires_at,\'DD Mon YYYY\') expiry,monthly_bill bill,status';
 
-const syncRadiusUser = async (db, data, previousUsername = null) => {
+const syncRadiusUser = async (db, data, selectedPackage, previousUsername = null) => {
+  if (!selectedPackage || Number(selectedPackage.id) !== Number(data.packageId) || Number(selectedPackage.owner_user_id) !== Number(data.ownerUserId))
+    throw Object.assign(new Error('Exact tenant package required'), { status: 422 });
   const oldUsername = previousUsername || data.username;
   await db.query("delete from radcheck where username=$1", [oldUsername]);
   await db.query("delete from radreply where username=$1", [oldUsername]);
   await db.query("delete from radusergroup where username=$1", [oldUsername]);
-  const packageResult = await db.query(
-    "select download_mbps,upload_mbps from app_packages where name=$1 and status='Active' order by case when owner_role='Admin' then 1 else 0 end limit 1",
-    [data.packageName],
-  );
-  const speed = packageResult.rows[0] || {
-    download_mbps: Number.parseInt(data.packageName) || 10,
-    upload_mbps: Number.parseInt(data.packageName) || 10,
-  };
+  const speed = selectedPackage;
   const expiry = await db.query(
     "select to_char($1::date,'DD Mon YYYY 23:59:59') value",
     [data.expiresAt],
@@ -286,8 +283,13 @@ app.post("/api/clients", authenticate, async (req, res, next) => {
       return res.status(403).json({ error: "Explicit owner mapping required" });
     if (!["Admin", "Reseller", "Sub-reseller"].includes(owner))
       return res.status(422).json({ error: "Invalid owner role" });
+    const selectedPackage = await resolveTenantPackage(db, req.auth, d.packageId);
+    if (!selectedPackage || Number(selectedPackage.owner_user_id) !== Number(req.auth.id))
+      return res.status(422).json({ error: "Exact owned package ID required" });
+    d.packageName = selectedPackage.name;
+    d.ownerUserId = req.auth.id;
     const sql =
-      "insert into app_clients(name,username,phone,package_name,router_name,ip_address,expires_at,monthly_bill,status,owner_role,owner_user_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning " +
+      "insert into app_clients(name,username,phone,package_name,router_name,ip_address,expires_at,monthly_bill,status,owner_role,owner_user_id,package_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning " +
       returnedClient;
     await db.query("begin");
     const { rows } = await db.query(sql, [
@@ -302,8 +304,9 @@ app.post("/api/clients", authenticate, async (req, res, next) => {
       d.status,
       owner,
       req.auth.id,
+      Number(d.packageId),
     ]);
-    await syncRadiusUser(db, d);
+    await syncRadiusUser(db, d, selectedPackage);
     await db.query(
       "insert into app_client_history(client_id,action,snapshot,actor_user_id) values($1,'Created',$2,$3)",
       [rows[0].id, rows[0], req.auth.id],
@@ -334,6 +337,13 @@ app.patch("/api/clients/:id", authenticate, async (req, res, next) => {
       await db.query("rollback");
       return res.status(404).json({ error: "Client not found" });
     }
+    const selectedPackage = await resolveTenantPackage(db, req.auth, d.packageId);
+    if (!selectedPackage || Number(selectedPackage.owner_user_id) !== Number(old[0].owner_user_id)) {
+      await db.query("rollback");
+      return res.status(422).json({ error: "Exact client-owner package ID required" });
+    }
+    d.packageName = selectedPackage.name;
+    d.ownerUserId = old[0].owner_user_id;
     if (!d.password) {
       const secret = await db.query(
         "select value from radcheck where username=$1 and attribute='Cleartext-Password' limit 1",
@@ -351,7 +361,7 @@ app.patch("/api/clients/:id", authenticate, async (req, res, next) => {
       [req.params.id, old[0], req.auth.id],
     );
     const sql =
-      "update app_clients set name=$1,username=$2,phone=$3,package_name=$4,router_name=$5,ip_address=$6,expires_at=$7,monthly_bill=$8,status=$9 where id=$10 returning " +
+      "update app_clients set name=$1,username=$2,phone=$3,package_name=$4,router_name=$5,ip_address=$6,expires_at=$7,monthly_bill=$8,status=$9,package_id=$11 where id=$10 returning " +
       returnedClient;
     const { rows } = await db.query(sql, [
       d.name,
@@ -364,8 +374,9 @@ app.patch("/api/clients/:id", authenticate, async (req, res, next) => {
       d.monthlyBill,
       d.status,
       req.params.id,
+      Number(d.packageId),
     ]);
-    await syncRadiusUser(db, d, old[0].username);
+    await syncRadiusUser(db, d, selectedPackage, old[0].username);
     await db.query("commit");
     res.json({ data: rows[0] });
   } catch (error) {
