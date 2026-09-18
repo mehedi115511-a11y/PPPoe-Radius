@@ -1,19 +1,25 @@
 # Coordination Locks
 
-A lock must include owner, scope, start checkpoint, reason, and release condition.
-
 ## Rules
-- No simultaneous edit of the same shared file.
-- No production migration or deployment without a deployment lock.
-- Feature chats do not merge their own work into the release branch.
-- Chat C owns controlled integration, smoke tests, rollback evidence, and lock release.
-- A chat blocked on a shared file must continue independent work instead of editing around the lock.
+- One unified engineer works sequentially in one worktree at a time.
+- No production migration or deployment without an explicit deployment lock.
+- No force-push, hard reset, blind overwrite, secret disclosure, or unverified merge.
+- A credential-dependent check never blocks independent implementation or tests.
+
+## Released locks
+### Task 24 shared schema
+- Former owner: Chat B / core lane.
+- Released after migration-twice, fresh-schema, authenticated cross-tenant API tests, suspended-token revalidation, full tests/build, and controlled merge into `chat-c/integration-release`.
+- Integration merge checkpoint: `d29f6c62259d505885eb9f4bcbddc7248a3fda3c`.
+- Production migration remains separately locked and was not performed.
 
 ## Active locks
-### Task 24 shared schema
-- Owner: Chat B
-- Scope: `server/schema.sql` and any new Task-24 migration file that changes shared client/package/accounting/billing or tenant-ownership columns.
-- Start checkpoint: Chat B `4c6833c78fd361408090a8c7a803c71ad96a2552`
-- Reason: prevent Task 24 and Task 44 from creating conflicting ownership/schema migrations.
-- Chat C rule: do not edit the locked scope; continue independent wallet/service/security tests and document required contract changes.
-- Release condition: Chat B pushes the schema commit, updates Issue #5 with migration/test evidence, and marks Task 24 `READY_FOR_REVIEW`; Chat C then reviews and integrates.
+### Task 44 wallet schema/service
+- Owner: unified engineer on `chat-c/integration-release`.
+- Scope: `server/migrations/009_task44_wallet_ledger.sql`, `server/wallet/ledger.js`, `server/wallet/wallet-store.js`, their tests and future wallet API wiring.
+- Start checkpoint: `307314fadae86d0b5fa9a3a058b2add27a3f9e27`.
+- Reason: preserve append-only ledger, idempotency, exact tenant ownership and concurrency guarantees.
+- Release condition: isolated migration-twice, immutable-trigger, replay/fingerprint, insufficient-balance concurrency, API authorization, recharge atomicity, full suite/build and integration evidence all pass.
+
+## Deployment lock
+None. Production remains unchanged.
