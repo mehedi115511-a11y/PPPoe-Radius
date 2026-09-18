@@ -424,6 +424,7 @@ function Clients() {
   let [q, setQ] = useState(""),
     [f, setF] = useState("All"),
     [clientData, setClientData] = useState(clients),
+    [availablePackages, setAvailablePackages] = useState([]),
     [loading, setLoading] = useState(false),
     [loadError, setLoadError] = useState(""),
     [editing, setEditing] = useState(null),
@@ -431,10 +432,11 @@ function Clients() {
   const loadClients = () => {
     let active = true;
     setLoading(true);
-    apiGet("/api/clients")
-      .then((response) => {
+    Promise.all([apiGet("/api/clients"), apiGet("/api/packages")])
+      .then(([response, packagesResponse]) => {
         if (active) {
           setClientData(response.data.map(formatClient));
+          setAvailablePackages(packagesResponse.data.filter((item) => item.status === "Active"));
           setLoadError("");
         }
       })
@@ -606,12 +608,12 @@ function Clients() {
               </label>
               <label>
                 Package
-                <input
-                  name="package"
-                  defaultValue={editing?.package || ""}
-                  placeholder="20 Mbps"
-                  required
-                />
+                <select name="packageId" defaultValue={editing?.packageId || ""} required>
+                  <option value="" disabled>Select an owned package</option>
+                  {availablePackages.map((pkg) => (
+                    <option key={pkg.id} value={pkg.id}>{pkg.name} — ৳{pkg.price}</option>
+                  ))}
+                </select>
               </label>
               <label>
                 Router / NAS

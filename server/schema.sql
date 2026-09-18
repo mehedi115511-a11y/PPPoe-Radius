@@ -27,6 +27,10 @@ create table if not exists app_users(
   created_at timestamptz not null default now()
 );
 
+-- Legacy rows retain NULL owner until explicitly reconciled; never infer owner by role.
+alter table app_clients add column if not exists owner_user_id bigint references app_users(id);
+create index if not exists app_clients_owner_user_idx on app_clients(owner_user_id);
+
 create table if not exists app_impersonation_audit(
   id bigserial primary key,
   admin_user_id bigint not null references app_users(id),
@@ -56,14 +60,24 @@ create table if not exists app_packages(
   validity_days integer not null default 30 check(validity_days>0),
   owner_role text not null check(owner_role in('Admin','Reseller','Sub-reseller')),
   status text not null default 'Active' check(status in('Active','Disabled')),
-  created_at timestamptz not null default now(),
-  unique(name,owner_role)
+  created_at timestamptz not null default now()
 );
 create index if not exists app_packages_owner_idx on app_packages(owner_role,status);
+-- NULL means unresolved legacy ownership; API must deny access until mapping.
+alter table app_packages add column if not exists owner_user_id bigint references app_users(id);
+create index if not exists app_packages_owner_user_idx on app_packages(owner_user_id,status);
+create unique index if not exists app_packages_owner_name_unique
+  on app_packages(owner_user_id,name) where owner_user_id is not null;
 
+-- Exact package identity remains NULL on legacy clients pending explicit mapping.
+alter table app_clients add column if not exists package_id bigint references app_packages(id);
+create index if not exists app_clients_package_id_idx on app_clients(package_id);
+
+-- Seed only unresolved legacy examples without relying on a removed role-wide constraint.
 insert into app_packages(name,download_mbps,upload_mbps,price,validity_days,owner_role)
-values ('10 Mbps',10,10,500,30,'Admin'),('20 Mbps',20,20,800,30,'Admin'),('50 Mbps',50,50,2000,30,'Admin')
-on conflict(name,owner_role) do nothing;
+select seed.name,seed.download_mbps,seed.upload_mbps,seed.price,30,'Admin'
+from (values ('10 Mbps',10,10,500),('20 Mbps',20,20,800),('50 Mbps',50,50,2000)) as seed(name,download_mbps,upload_mbps,price)
+where not exists (select 1 from app_packages p where p.name=seed.name and p.owner_role='Admin' and p.owner_user_id is null);
 
 insert into app_clients(name,username,phone,package_name,router_name,ip_address,expires_at,monthly_bill,status,owner_role)
 values
