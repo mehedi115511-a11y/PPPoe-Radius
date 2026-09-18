@@ -8,6 +8,9 @@ import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
 import { allocateVpnAddress, validateWireGuardPublicKey } from "./vpn-address.js";
 import { renderRouterOsPeerScript } from "./vpn-config.js";
+import { createChrPeerSync } from "./chr-peer-sync.js";
+import { routerOsRestAdapterFromEnv } from "./routeros-rest-adapter.js";
+import { applyPeerOperation } from "./vpn-peer-service.js";
 
 const { Pool } = pg;
 const app = express();
@@ -44,6 +47,22 @@ const requireAdmin = (req, res, next) =>
   req.auth?.role === "Admin" && !req.auth?.impersonatedBy
     ? next()
     : res.status(403).json({ error: "Administrator access required" });
+
+let chrSync;
+const configuredChrSync = () => {
+  if (!process.env.CHR_ROUTEROS_REST_URL)
+    throw Object.assign(new Error("CHR synchronization is not configured"), { status: 503 });
+  if (!chrSync) chrSync = createChrPeerSync(routerOsRestAdapterFromEnv());
+  return chrSync;
+};
+const peerOperation = (operation) => async (req,res,next) => {
+  try {
+    const data=await applyPeerOperation(pool,configuredChrSync(),{
+      peerId:Number(req.params.id),actorId:req.auth.id,operation,
+    });
+    res.json({data});
+  } catch(error) { next(error); }
+};
 
 app.post("/api/auth/login", loginLimiter, async (req, res, next) => {
   try {
@@ -554,23 +573,9 @@ app.post("/api/admin/vpn/peers", authenticate, requireAdmin, async (req, res, ne
   } finally { client?.release(); }
 });
 
-app.post("/api/admin/vpn/peers/:id/revoke", authenticate, requireAdmin, async (req, res, next) => {
-  if (!/^[1-9][0-9]*$/.test(req.params.id)) return res.status(422).json({ error: "Invalid peer ID" });
-  let client;
-  try {
-    client = await pool.connect();
-    await client.query("begin");
-    const { rows } = await client.query("update vpn_peers set status='Revoked',revoked_at=now(),updated_at=now() where id=$1 and status='Pending' returning id,status",[req.params.id]);
-    if (!rows.length) {
-      await client.query("rollback");
-      return res.status(409).json({ error: "Only pending, not-yet-synchronized peers can be revoked safely" });
-    }
-    await client.query("insert into vpn_peer_audit(peer_id,actor_user_id,action) values($1,$2,'Revoked')",[rows[0].id,req.auth.id]);
-    await client.query("commit");
-    res.json({ data: rows[0] });
-  } catch(error) { if (client) await client.query("rollback").catch(()=>{}); next(error); }
-  finally { client?.release(); }
-});
+app.post("/api/admin/vpn/peers/:id/sync", authenticate, requireAdmin, peerOperation("Enable"));
+app.post("/api/admin/vpn/peers/:id/disable", authenticate, requireAdmin, peerOperation("Disable"));
+app.post("/api/admin/vpn/peers/:id/revoke", authenticate, requireAdmin, peerOperation("Revoke"));
 
 app.use((error, _req, res, _next) => {
   console.error(error);
