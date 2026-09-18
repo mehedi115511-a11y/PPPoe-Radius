@@ -10,6 +10,7 @@ import { allocateVpnAddress, validateWireGuardPublicKey } from "./vpn-address.js
 import { renderRouterOsPeerScript } from "./vpn-config.js";
 import { revalidateSession } from "./security/session-revalidation.js";
 import { tenantScope, resolveTenantPackage } from "./security/tenant-queries.js";
+import { postRecharge } from "./recharge/recharge-store.js";
 
 const { Pool } = pg;
 const app = express();
@@ -531,6 +532,66 @@ app.delete("/api/packages/:id", authenticate, async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+app.get("/api/wallet", authenticate, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      'select id,currency,balance_minor "balanceMinor",version,updated_at "updatedAt" from wallet_accounts where tenant_owner_user_id=$1 and owner_user_id=$1',
+      [req.auth.id]);
+    if (!rows[0]) return res.status(404).json({ error: "Owned wallet not found" });
+    res.json({ data: rows[0] });
+  } catch (error) { next(error); }
+});
+app.get("/api/wallet/ledger", authenticate, async (req, res, next) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const { rows } = await pool.query(
+      `select t.id,t.operation,t.source_reference "sourceReference",t.created_at "createdAt",
+       e.direction,e.amount_minor "amountMinor",e.wallet_account_id "walletAccountId"
+       from wallet_ledger_transactions t join wallet_ledger_entries e on e.transaction_id=t.id
+       join wallet_accounts a on a.id=e.wallet_account_id
+       where t.tenant_owner_user_id=$1 and a.tenant_owner_user_id=$1 and a.owner_user_id=$1
+       order by t.created_at desc,t.id desc,e.id limit $2`, [req.auth.id, limit]);
+    res.json({ data: rows, count: rows.length });
+  } catch (error) { next(error); }
+});
+app.get("/api/recharges", authenticate, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `select id,receipt_reference "receiptReference",client_id "clientId",package_id "packageId",
+       recharge_mode mode,selected_days "selectedDays",recharge_date "rechargeDate",
+       calculated_amount_minor "amountMinor",previous_expiry "previousExpiry",new_expiry "newExpiry",
+       wallet_ledger_transaction_id "walletTransactionId",created_at "createdAt"
+       from app_recharge_receipts where tenant_owner_user_id=$1 order by created_at desc,id desc limit 200`,
+      [req.auth.id]);
+    res.json({ data: rows, count: rows.length });
+  } catch (error) { next(error); }
+});
+app.get("/api/recharges/:id", authenticate, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `select id,receipt_reference "receiptReference",client_id "clientId",package_id "packageId",
+       recharge_mode mode,selected_days "selectedDays",recharge_date "rechargeDate",
+       calculated_amount_minor "amountMinor",previous_expiry "previousExpiry",new_expiry "newExpiry",
+       wallet_ledger_transaction_id "walletTransactionId",created_at "createdAt"
+       from app_recharge_receipts where id=$1 and tenant_owner_user_id=$2`,
+      [req.params.id, req.auth.id]);
+    if (!rows[0]) return res.status(404).json({ error: "Receipt not found" });
+    res.json({ data: rows[0] });
+  } catch (error) { next(error); }
+});
+app.post("/api/clients/:id/recharge", authenticate, async (req, res, next) => {
+  try {
+    const idempotencyKey = req.get("Idempotency-Key");
+    if (!idempotencyKey) return res.status(422).json({ error: "Idempotency-Key header required" });
+    const data = await postRecharge(pool, {
+      actor: req.auth, clientId: Number(req.params.id), mode: req.body?.mode,
+      selectedDays: req.body?.selectedDays, rechargeDate: req.body?.rechargeDate,
+      idempotencyKey, settlementOwnerUserId: Number(process.env.BILLING_WALLET_OWNER_USER_ID),
+    });
+    res.status(data.replay ? 200 : 201).json({ data });
+  } catch (error) { next(error); }
 });
 
 // Downloadable manual CHR peer command: public information only, not an activation.

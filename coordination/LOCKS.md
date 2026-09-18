@@ -16,7 +16,7 @@
 ## Active locks
 ### Task 44 wallet schema/service
 - Owner: unified engineer on `chat-c/integration-release`.
-- Scope: `server/migrations/009_task44_wallet_ledger.sql`, `server/wallet/ledger.js`, `server/wallet/wallet-store.js`, their tests and future wallet API wiring.
+- Scope: wallet ledger plus `server/migrations/010_task44_recharge_receipts.sql`, recharge service/tests, authenticated wallet/ledger/receipt/recharge API wiring and fresh-schema composition.
 - Start checkpoint: `307314fadae86d0b5fa9a3a058b2add27a3f9e27`.
 - Reason: preserve append-only ledger, idempotency, exact tenant ownership and concurrency guarantees.
 - Release condition: isolated migration-twice, immutable-trigger, replay/fingerprint, insufficient-balance concurrency, API authorization, recharge atomicity, full suite/build and integration evidence all pass.

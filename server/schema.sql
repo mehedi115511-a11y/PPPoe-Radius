@@ -87,3 +87,7 @@ values
  ('Mim Enterprise','mim-enterprise','01600-000009','50 Mbps','Dhaka-Core-01','10.22.9.11','2026-09-15',2000,'Expired','Reseller'),
  ('Jahid Telecom','jahid-tel-08','01300-000008','20 Mbps','Comilla-NAS-01','10.25.7.32','2026-10-03',800,'Offline','Sub-reseller')
 on conflict(username) do nothing;
+
+-- Fresh installs include the additive financial schema; migrations remain independently idempotent.
+\ir migrations/009_task44_wallet_ledger.sql
+\ir migrations/010_task44_recharge_receipts.sql

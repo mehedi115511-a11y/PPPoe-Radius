@@ -19,7 +19,8 @@ These are known-good baseline ancestors, not exact current HEAD values. Validate
 - Network lane: IN_PROGRESS; latest mocked CHR suite previously passed 27/27, live authenticated RouterOS integration remains.
 - Task 24 tenant security: VERIFIED in isolated DB/API tests and merged into integration branch at d29f6c62259d505885eb9f4bcbddc7248a3fda3c.
 - Task 24 production reconciliation: WAITING_APPROVAL; exact legacy mapping, backup, deployment lock and rollback are required before production migration.
-- Task 44 wallet ledger: IN_PROGRESS on integration branch. Migration 009, immutable ledger and atomic wallet service are implemented in isolated form; 34/34 combined tests and wallet concurrency integration pass at 7bf3d177e822c4aba20a9b21948bdc0ce5ce9307.
+- Task 44 wallet/recharge API: READY_FOR_REVIEW on integration branch. Authenticated own-wallet/ledger/receipt endpoints, migration 010, full-cycle and integer half-up custom-day recharge, atomic wallet+expiry+receipt posting, immutable receipts and concurrency-safe replay are implemented.
+- Latest evidence: fresh schema twice, RECHARGE_INTEGRATION_PASS (replay, identical/different concurrency, rollback, balanced ledger, immutable rows, tenant/suspended/impersonated/NULL-owner denial), 37/37 Vitest, 9/9 files and build passed. Production unchanged.
 - Production: UNCHANGED. No production deploy or migration is authorized.
 
 ## Target VPS route
