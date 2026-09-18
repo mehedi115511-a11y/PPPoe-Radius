@@ -30,6 +30,25 @@ describe('RADIUS package identity', () => {
     expect(db.query).toHaveBeenCalledWith(expect.stringContaining('owner_user_id = $1 AND id=$2'), [2, 17]);
     expect(db.query.mock.calls[0][0]).not.toContain('name=');
   });
+  it('does not expose another reseller package with the same name', async () => {
+    const packages = [{ id: 17, owner_user_id: 3, name: 'Shared', status: 'Active' }, { id: 18, owner_user_id: 2, name: 'Shared', status: 'Active' }];
+    const db = { query: vi.fn(async (sql, params) => ({ rows: packages.filter((pkg) => pkg.owner_user_id === params[0] && pkg.id === Number(params[1]) && pkg.status === 'Active') })) };
+    expect(await resolveTenantPackage(db, a, 17)).toBeNull();
+    expect(await resolveTenantPackage(db, a, 18)).toMatchObject({ id: 18, owner_user_id: 2 });
+    expect(db.query.mock.calls.every(([sql]) => sql.includes("status='Active'"))).toBe(true);
+  });
+  it('rejects legacy ownerless or disabled packages in tenant-filtered lookup', async () => {
+    const packages = [{ id: 19, owner_user_id: null, status: 'Active' }, { id: 20, owner_user_id: 2, status: 'Disabled' }];
+    const db = { query: vi.fn(async (_sql, [owner, id]) => ({ rows: packages.filter((pkg) => pkg.owner_user_id === owner && pkg.id === Number(id) && pkg.status === 'Active') })) };
+    expect(await resolveTenantPackage(db, a, 19)).toBeNull();
+    expect(await resolveTenantPackage(db, a, 20)).toBeNull();
+  });
+  it('blocks impersonated admin and suspended actors before lookup', async () => {
+    const db = { query: vi.fn() };
+    await expect(resolveTenantPackage(db, { ...admin, impersonatedBy: { id: 2 } }, 17)).rejects.toThrow();
+    await expect(resolveTenantPackage(db, { ...a, status: 'Suspended' }, 17)).rejects.toThrow();
+    expect(db.query).not.toHaveBeenCalled();
+  });
   it('rejects malformed IDs before database access', async () => {
     const db = { query: vi.fn() };
     for (const id of [null, 0, -1, '01', '1 OR 1=1', {}, '9007199254740992']) expect(await resolveTenantPackage(db, a, id)).toBeNull();
