@@ -60,13 +60,14 @@ create table if not exists app_packages(
   validity_days integer not null default 30 check(validity_days>0),
   owner_role text not null check(owner_role in('Admin','Reseller','Sub-reseller')),
   status text not null default 'Active' check(status in('Active','Disabled')),
-  created_at timestamptz not null default now(),
-  unique(name,owner_role)
+  created_at timestamptz not null default now()
 );
 create index if not exists app_packages_owner_idx on app_packages(owner_role,status);
 -- NULL means unresolved legacy ownership; API must deny access until mapping.
 alter table app_packages add column if not exists owner_user_id bigint references app_users(id);
 create index if not exists app_packages_owner_user_idx on app_packages(owner_user_id,status);
+create unique index if not exists app_packages_owner_name_unique
+  on app_packages(owner_user_id,name) where owner_user_id is not null;
 
 -- Exact package identity remains NULL on legacy clients pending explicit mapping.
 alter table app_clients add column if not exists package_id bigint references app_packages(id);
