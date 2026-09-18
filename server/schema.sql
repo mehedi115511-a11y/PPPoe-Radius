@@ -72,9 +72,11 @@ create index if not exists app_packages_owner_user_idx on app_packages(owner_use
 alter table app_clients add column if not exists package_id bigint references app_packages(id);
 create index if not exists app_clients_package_id_idx on app_clients(package_id);
 
+-- Seed only unresolved legacy examples without relying on a removed role-wide constraint.
 insert into app_packages(name,download_mbps,upload_mbps,price,validity_days,owner_role)
-values ('10 Mbps',10,10,500,30,'Admin'),('20 Mbps',20,20,800,30,'Admin'),('50 Mbps',50,50,2000,30,'Admin')
-on conflict(name,owner_role) do nothing;
+select seed.name,seed.download_mbps,seed.upload_mbps,seed.price,30,'Admin'
+from (values ('10 Mbps',10,10,500),('20 Mbps',20,20,800),('50 Mbps',50,50,2000)) as seed(name,download_mbps,upload_mbps,price)
+where not exists (select 1 from app_packages p where p.name=seed.name and p.owner_role='Admin' and p.owner_user_id is null);
 
 insert into app_clients(name,username,phone,package_name,router_name,ip_address,expires_at,monthly_bill,status,owner_role)
 values
