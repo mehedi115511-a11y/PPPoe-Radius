@@ -119,13 +119,14 @@ const apiGet = async (path) => {
   if (!response.ok) throw new Error("Unable to load live data");
   return response.json();
 };
-const apiSend = async (path, method, body) => {
+const apiSend = async (path, method, body, extraHeaders = {}) => {
   const token = localStorage.getItem("pppoe_token");
   const response = await fetch(path, {
     method,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...extraHeaders,
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
@@ -895,6 +896,73 @@ function Packages() {
     </div>
   );
 }
+function WalletWorkspace() {
+  const [wallet,setWallet]=useState(null),[entries,setEntries]=useState([]),
+    [receipts,setReceipts]=useState([]),[error,setError]=useState("");
+  useEffect(()=>{
+    let active=true;
+    Promise.all([apiGet("/api/wallet"),apiGet("/api/wallet/ledger"),apiGet("/api/recharges")])
+      .then(([balance,ledger,recharges])=>{
+        if(active){setWallet(balance.data);setEntries(ledger.data);setReceipts(recharges.data);}
+      })
+      .catch(e=>active&&setError(e.message));
+    return()=>{active=false};
+  },[]);
+  const money=value=>`৳${(Number(value)/100).toFixed(2)}`;
+  return <div className="content">
+    <section className="page-title"><div><h1>Wallet & Ledger</h1><p>Current balance and recorded transactions</p></div></section>
+    {error&&<div className="data-warning">{error}</div>}
+    <section className="panel"><h2>Available balance</h2><strong>{wallet?money(wallet.balanceMinor):"—"}</strong></section>
+    <section className="panel"><h2>Ledger history</h2><div className="table-wrap"><table><thead><tr><th>Date</th><th>Operation</th><th>Direction</th><th>Amount</th></tr></thead>
+      <tbody>{entries.map((item,index)=><tr key={`${item.id}-${index}`}><td>{new Date(item.createdAt).toLocaleString()}</td><td>{item.operation}</td><td>{item.direction}</td><td>{money(item.amountMinor)}</td></tr>)}</tbody></table></div></section>
+    <section className="panel"><h2>Recharge receipts</h2><div className="table-wrap"><table><thead><tr><th>Reference</th><th>Mode</th><th>Amount</th><th>Expiry</th></tr></thead>
+      <tbody>{receipts.map(item=><tr key={item.id}><td>{item.receiptReference}</td><td>{item.mode}</td><td>{money(item.amountMinor)}</td><td>{String(item.newExpiry).slice(0,10)}</td></tr>)}</tbody></table></div></section>
+  </div>;
+}
+
+function BillingWorkspace() {
+  const [clients,setClients]=useState([]),[clientId,setClientId]=useState(""),
+    [mode,setMode]=useState("full_cycle"),[days,setDays]=useState("1"),
+    [busy,setBusy]=useState(false),[error,setError]=useState(""),[receipt,setReceipt]=useState(null),
+    [requestKey,setRequestKey]=useState(null);
+  useEffect(()=>{
+    let active=true;
+    apiGet("/api/clients").then(response=>active&&setClients(response.data))
+      .catch(e=>active&&setError(e.message));
+    return()=>{active=false};
+  },[]);
+  const submit=async(event)=>{
+    event.preventDefault();setBusy(true);setError("");
+    const key=requestKey||crypto.randomUUID();
+    setRequestKey(key);
+    try{
+      const response=await apiSend(`/api/clients/${clientId}/recharge`,"POST",
+        {mode,...(mode==="custom_days"?{selectedDays:Number(days)}:{})},{"Idempotency-Key":key});
+      setReceipt(response.data);setRequestKey(null);
+    }catch(e){setError(e.message)}
+    finally{setBusy(false)}
+  };
+  const changeRequest=()=>{setReceipt(null);setRequestKey(null)};
+  return <div className="content">
+    <section className="page-title"><div><h1>Billing</h1><p>Recharge an owned client from your wallet</p></div></section>
+    {error&&<div className="data-warning">{error}</div>}
+    <section className="panel vpn-create"><h2>Recharge client</h2><form className="vpn-form" onSubmit={submit}>
+      <label>Client<select value={clientId} onChange={e=>{setClientId(e.target.value);changeRequest()}} required><option value="">Select client</option>
+        {clients.map(c=><option key={c.id} value={c.id}>{c.name} — {c.user}</option>)}</select></label>
+      <label>Recharge mode<select value={mode} onChange={e=>{setMode(e.target.value);changeRequest()}}>
+        <option value="full_cycle">Full cycle — one calendar month</option>
+        <option value="custom_days">Custom days — prorated</option>
+      </select></label>
+      {mode==="custom_days"&&<label>Selected days<input type="number" min="1" max="366" value={days} onChange={e=>{setDays(e.target.value);changeRequest()}} required/></label>}
+      <button className="quick" disabled={busy||!clientId}>{busy?"Posting…":"Post Recharge"}</button>
+    </form></section>
+    {receipt&&<section className="panel" role="status"><h2>Recharge receipt</h2>
+      <p>Reference: {receipt.receiptReference}</p><p>Amount: ৳{(Number(receipt.amountMinor)/100).toFixed(2)}</p>
+      <p>Expiry: {String(receipt.previousExpiry).slice(0,10)} → {String(receipt.newExpiry).slice(0,10)}</p>
+    </section>}
+  </div>;
+}
+
 function VpnManagement() {
   const [items,setItems]=useState([]),[name,setName]=useState(""),[routerOsMajor,setRouterOsMajor]=useState("7"),
     [script,setScript]=useState(""),[error,setError]=useState(""),[loading,setLoading]=useState(false),
@@ -983,6 +1051,10 @@ export function App() {
       <Packages />
     ) : active === "VPN" ? (
       <VpnManagement />
+    ) : active === "Wallet & Ledger" ? (
+      <WalletWorkspace />
+    ) : active === "Billing" ? (
+      <BillingWorkspace />
     ) : (
       <Simple name={active} />
     );
@@ -1087,7 +1159,7 @@ export function App() {
               <Bell />
               <span>3</span>
             </button>
-            <button className="quick">
+            <button className="quick" onClick={() => setActive("Billing")}>
               <Zap />
               Quick Recharge
             </button>

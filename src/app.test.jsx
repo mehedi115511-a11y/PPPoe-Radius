@@ -89,3 +89,13 @@ test("opens dedicated VPN workspace with RouterOS 6 and 7 selection", async () =
   expect(within(selector).getByRole("option", { name: /RouterOS 6/ })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Create VPN & Script" })).toBeInTheDocument();
 });
+
+test("opens billing with full cycle and custom day modes", async () => {
+  render(<App />);
+  await userEvent.click(screen.getByRole("button", { name: "Quick Recharge" }));
+  expect(screen.getByRole("heading", { name: "Billing" })).toBeInTheDocument();
+  const mode = screen.getByLabelText("Recharge mode");
+  expect(mode).toHaveValue("full_cycle");
+  await userEvent.selectOptions(mode, "custom_days");
+  expect(screen.getByLabelText("Selected days")).toHaveAttribute("min", "1");
+});
