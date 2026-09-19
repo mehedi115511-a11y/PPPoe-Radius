@@ -14,6 +14,7 @@ import { createChrPeerSync } from "./chr-peer-sync.js";
 import { routerOsRestAdapterFromEnv } from "./routeros-rest-adapter.js";
 import { applyPeerOperation, reconcilePeers, revokeL2tpProfile } from "./vpn-peer-service.js";
 import { createVpnProfile, vpnRuntimeConfig } from "./vpn-profile-create.js";
+import { vpnReadiness } from "./vpn-readiness.js";
 
 const { Pool } = pg;
 const app = express();
@@ -54,8 +55,8 @@ const requireAdmin = (req, res, next) =>
 
 let chrSync;
 const configuredChrSync = () => {
-  if (!process.env.CHR_ROUTEROS_REST_URL)
-    throw Object.assign(new Error("CHR synchronization is not configured"), { status: 503 });
+  if (!vpnReadiness().chrSync.ready)
+    throw Object.assign(new Error("CHR synchronization is not configured; check VPN readiness"), { status: 503 });
   if (!chrSync) chrSync = createChrPeerSync(routerOsRestAdapterFromEnv());
   return chrSync;
 };
@@ -623,6 +624,10 @@ app.get("/api/admin/vpn/peers/:id/routeros-script", authenticate, requireAdmin, 
   res.set("Cache-Control", "no-store");
   res.type("text/plain; charset=utf-8").send(`# Manual CHR-side peer command; NOT YET APPLIED\n${script}\n`);
  } catch (error) { next(error); }
+});
+
+app.get("/api/admin/vpn/readiness", authenticate, requireAdmin, (_req,res) => {
+  res.set("Cache-Control","no-store").json({ data:vpnReadiness() });
 });
 
 // Registry remains Pending until an independently verified CHR sync is available.
