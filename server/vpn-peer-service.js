@@ -102,3 +102,29 @@ export async function reconcilePeers(pool, sync, actorUserId) {
     })),
   };
 }
+
+export async function revokeL2tpProfile(pool, input) {
+  const peerId = validId(input.peerId, "peer ID");
+  const actorId = validId(input.actorId, "actor ID");
+  const db = await pool.connect();
+  try {
+    await db.query("BEGIN");
+    const { rows } = await db.query(
+      "select id,protocol,vpn_username username,status from vpn_peers where id=$1 for update",
+      [peerId],
+    );
+    const peer = rows[0];
+    if (!peer) throw Object.assign(new Error("VPN profile not found"), { status: 404 });
+    if (peer.protocol !== "l2tp_ipsec") throw Object.assign(new Error("Profile is not L2TP/IPsec"), { status: 409 });
+    if (peer.status === "Revoked") throw Object.assign(new Error("VPN profile already revoked"), { status: 409 });
+    await db.query("delete from radcheck where username=$1", [peer.username]);
+    await db.query("delete from radreply where username=$1", [peer.username]);
+    await db.query("update vpn_peers set status='Revoked',revoked_at=now(),updated_at=now() where id=$1", [peerId]);
+    await db.query("insert into vpn_peer_audit(peer_id,actor_user_id,action) values($1,$2,'Revoked')", [peerId, actorId]);
+    await db.query("COMMIT");
+    return { id: peerId, status: "Revoked" };
+  } catch (error) {
+    await db.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally { db.release(); }
+}

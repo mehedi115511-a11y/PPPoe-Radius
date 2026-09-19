@@ -12,7 +12,7 @@ import { tenantScope, resolveTenantPackage } from "./security/tenant-queries.js"
 import { postRecharge } from "./recharge/recharge-store.js";
 import { createChrPeerSync } from "./chr-peer-sync.js";
 import { routerOsRestAdapterFromEnv } from "./routeros-rest-adapter.js";
-import { applyPeerOperation, reconcilePeers } from "./vpn-peer-service.js";
+import { applyPeerOperation, reconcilePeers, revokeL2tpProfile } from "./vpn-peer-service.js";
 import { createVpnProfile, vpnRuntimeConfig } from "./vpn-profile-create.js";
 
 const { Pool } = pg;
@@ -650,7 +650,17 @@ app.post("/api/admin/vpn/peers/reconcile", authenticate, requireAdmin, async (re
 });
 app.post("/api/admin/vpn/peers/:id/sync", authenticate, requireAdmin, peerOperation("Enable"));
 app.post("/api/admin/vpn/peers/:id/disable", authenticate, requireAdmin, peerOperation("Disable"));
-app.post("/api/admin/vpn/peers/:id/revoke", authenticate, requireAdmin, peerOperation("Revoke"));
+app.post("/api/admin/vpn/peers/:id/revoke", authenticate, requireAdmin, async (req,res,next) => {
+  if (!/^[1-9][0-9]*$/.test(req.params.id)) return res.status(422).json({ error:"Invalid VPN profile ID" });
+  try {
+    const { rows } = await pool.query("select protocol from vpn_peers where id=$1", [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: "VPN profile not found" });
+    const data = rows[0].protocol === "l2tp_ipsec"
+      ? await revokeL2tpProfile(pool, { peerId:req.params.id, actorId:req.auth.id })
+      : await applyPeerOperation(pool, configuredChrSync(), { peerId:req.params.id, actorId:req.auth.id, operation:"Revoke" });
+    res.json({ data });
+  } catch(error) { next(error); }
+});
 
 app.use((error, _req, res, _next) => {
   console.error(error);
