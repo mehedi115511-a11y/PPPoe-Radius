@@ -1613,3 +1613,10 @@ td b {
     grid-template-columns: 1fr;
   }
 }
+.vpn-form{display:grid;grid-template-columns:minmax(220px,1fr) minmax(260px,1fr) auto;gap:16px;align-items:end}
+.vpn-form label{display:grid;gap:7px;font-size:13px;font-weight:700;color:#475569}
+.vpn-form input,.vpn-form select{height:44px;border:1px solid #dbe3ee;border-radius:10px;padding:0 12px;background:#fff;color:#172033}
+.vpn-script pre{margin:16px 0 0;max-height:360px;overflow:auto;padding:16px;border-radius:12px;background:#101827;color:#d8fbe5;white-space:pre-wrap;word-break:break-word;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+.vpn-script .panel-title>div:last-child{display:flex;gap:8px}
+.vpn-script button,.table-wrap button{margin:2px 4px 2px 0}
+@media(max-width:760px){.vpn-form{grid-template-columns:1fr}.vpn-script .panel-title{align-items:flex-start;gap:12px}.vpn-script .panel-title>div:last-child{flex-wrap:wrap}}

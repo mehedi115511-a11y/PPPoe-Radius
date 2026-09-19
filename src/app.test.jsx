@@ -80,3 +80,12 @@ test("opens the package management form", async () => {
     "1",
   );
 });
+test("opens dedicated VPN workspace with RouterOS 6 and 7 selection", async () => {
+  render(<App />);
+  await userEvent.click(screen.getByRole("button", { name: "VPN" }));
+  expect(screen.getByRole("heading", { name: "VPN" })).toBeInTheDocument();
+  const selector=screen.getByLabelText("RouterOS Version");
+  expect(selector).toHaveValue("7");
+  expect(within(selector).getByRole("option", { name: /RouterOS 6/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Create VPN & Script" })).toBeInTheDocument();
+});

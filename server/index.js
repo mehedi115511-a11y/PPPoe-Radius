@@ -6,11 +6,14 @@ import pg from "pg";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
-import { allocateVpnAddress, validateWireGuardPublicKey } from "./vpn-address.js";
 import { renderRouterOsPeerScript } from "./vpn-config.js";
 import { revalidateSession } from "./security/session-revalidation.js";
 import { tenantScope, resolveTenantPackage } from "./security/tenant-queries.js";
 import { postRecharge } from "./recharge/recharge-store.js";
+import { createChrPeerSync } from "./chr-peer-sync.js";
+import { routerOsRestAdapterFromEnv } from "./routeros-rest-adapter.js";
+import { applyPeerOperation, reconcilePeers } from "./vpn-peer-service.js";
+import { createVpnProfile, vpnRuntimeConfig } from "./vpn-profile-create.js";
 
 const { Pool } = pg;
 const app = express();
@@ -48,6 +51,22 @@ const requireAdmin = (req, res, next) =>
   req.auth?.role === "Admin" && !req.auth?.impersonatedBy
     ? next()
     : res.status(403).json({ error: "Administrator access required" });
+
+let chrSync;
+const configuredChrSync = () => {
+  if (!process.env.CHR_ROUTEROS_REST_URL)
+    throw Object.assign(new Error("CHR synchronization is not configured"), { status: 503 });
+  if (!chrSync) chrSync = createChrPeerSync(routerOsRestAdapterFromEnv());
+  return chrSync;
+};
+const peerOperation = (operation) => async (req,res,next) => {
+  try {
+    const data=await applyPeerOperation(pool,configuredChrSync(),{
+      peerId:Number(req.params.id),actorId:req.auth.id,operation,
+    });
+    res.json({data});
+  } catch(error) { next(error); }
+};
 
 app.post("/api/auth/login", loginLimiter, async (req, res, next) => {
   try {
@@ -609,54 +628,29 @@ app.get("/api/admin/vpn/peers/:id/routeros-script", authenticate, requireAdmin, 
 // Registry remains Pending until an independently verified CHR sync is available.
 app.get("/api/admin/vpn/peers", authenticate, requireAdmin, async (_req, res, next) => {
   try {
-    const { rows } = await pool.query('select id,name,public_key "publicKey",host(tunnel_ip) "tunnelIp",status,created_at "createdAt",revoked_at "revokedAt" from vpn_peers order by id desc');
+    const { rows } = await pool.query('select id,name,public_key "publicKey",host(tunnel_ip) "tunnelIp",status,routeros_major "routerOsMajor",protocol,vpn_username "vpnUsername",created_at "createdAt",revoked_at "revokedAt" from vpn_peers order by id desc');
     res.json({ data: rows, count: rows.length });
   } catch (error) { next(error); }
 });
 
 app.post("/api/admin/vpn/peers", authenticate, requireAdmin, async (req, res, next) => {
-  const name = req.body?.name;
-  const publicKey = req.body?.publicKey;
-  if (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9 _.-]{2,99}$/.test(name) || !validateWireGuardPublicKey(publicKey))
-    return res.status(422).json({ error: "Valid peer name and WireGuard public key required" });
-  let client;
   try {
-    client = await pool.connect();
-    await client.query("begin");
-    await client.query("select pg_advisory_xact_lock(778001)");
-    const { rows: allocated } = await client.query("select host(tunnel_ip) address from vpn_peers");
-    const tunnelIp = allocateVpnAddress(allocated.map(row => row.address));
-    const { rows } = await client.query(
-      'insert into vpn_peers(name,public_key,tunnel_ip,created_by) values($1,$2,$3,$4) returning id,name,public_key "publicKey",host(tunnel_ip) "tunnelIp",status',
-      [name.trim(),publicKey,tunnelIp,req.auth.id],
-    );
-    await client.query("insert into vpn_peer_audit(peer_id,actor_user_id,action) values($1,$2,'Created')",[rows[0].id,req.auth.id]);
-    await client.query("commit");
-    res.status(201).json({ data: rows[0], message: "Registered; router synchronization pending" });
-  } catch (error) {
-    if (client) await client.query("rollback").catch(() => {});
-    if (error.code === "23505") return res.status(409).json({ error: "Peer name, key or address already registered" });
-    next(error);
-  } finally { client?.release(); }
+    const data=await createVpnProfile(pool,{
+      name:req.body?.name,routerOsMajor:req.body?.routerOsMajor,actorId:req.auth.id,
+    },vpnRuntimeConfig());
+    res.set("Cache-Control","no-store");
+    res.status(201).json({data,message:"VPN created. Save the one-time script now."});
+  } catch(error) { next(error); }
 });
 
-app.post("/api/admin/vpn/peers/:id/revoke", authenticate, requireAdmin, async (req, res, next) => {
-  if (!/^[1-9][0-9]*$/.test(req.params.id)) return res.status(422).json({ error: "Invalid peer ID" });
-  let client;
+app.post("/api/admin/vpn/peers/reconcile", authenticate, requireAdmin, async (req,res,next) => {
   try {
-    client = await pool.connect();
-    await client.query("begin");
-    const { rows } = await client.query("update vpn_peers set status='Revoked',revoked_at=now(),updated_at=now() where id=$1 and status='Pending' returning id,status",[req.params.id]);
-    if (!rows.length) {
-      await client.query("rollback");
-      return res.status(409).json({ error: "Only pending, not-yet-synchronized peers can be revoked safely" });
-    }
-    await client.query("insert into vpn_peer_audit(peer_id,actor_user_id,action) values($1,$2,'Revoked')",[rows[0].id,req.auth.id]);
-    await client.query("commit");
-    res.json({ data: rows[0] });
-  } catch(error) { if (client) await client.query("rollback").catch(()=>{}); next(error); }
-  finally { client?.release(); }
+    res.json({data:await reconcilePeers(pool,configuredChrSync(),req.auth.id)});
+  } catch(error) { next(error); }
 });
+app.post("/api/admin/vpn/peers/:id/sync", authenticate, requireAdmin, peerOperation("Enable"));
+app.post("/api/admin/vpn/peers/:id/disable", authenticate, requireAdmin, peerOperation("Disable"));
+app.post("/api/admin/vpn/peers/:id/revoke", authenticate, requireAdmin, peerOperation("Revoke"));
 
 app.use((error, _req, res, _next) => {
   console.error(error);
