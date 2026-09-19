@@ -1,0 +1,21 @@
+[Unit]
+Description=PPPoE RADIUS API
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=REPLACE_WITH_APP_USER
+Group=REPLACE_WITH_APP_GROUP
+WorkingDirectory=REPLACE_WITH_INSTALL_DIRECTORY
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=REPLACE_WITH_INSTALL_DIRECTORY
+
+[Install]
+WantedBy=multi-user.target

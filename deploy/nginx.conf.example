@@ -1,0 +1,16 @@
+# Replace domain, install path, and API port to match your installation.
+server {
+    listen 80;
+    server_name REPLACE_WITH_DOMAIN;
+    root REPLACE_WITH_INSTALL_DIRECTORY/dist;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:REPLACE_WITH_API_PORT;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

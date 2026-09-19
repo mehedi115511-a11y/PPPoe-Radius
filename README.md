@@ -22,3 +22,7 @@ The installer collects database connection and first-administrator settings, app
 - Desktop, tablet and mobile layouts
 
 The installer refuses a database that already exists on first install. For a previously installed copy, run `npm run install:app -- --rerun` with the same database settings; the installer verifies the local database marker and keeps the existing JWT secret and administrator password. Secret prompts require an interactive terminal and hide typed characters.
+
+After starting the API, run `npm run smoke:install`. It checks the installed database, migration ledger, active administrator and the local API health endpoint. It exits nonzero on failure and never prints credentials.
+
+For a Linux host, see `deploy/pppoe-api.service.example` and `deploy/nginx.conf.example`. Replace each placeholder, set a dedicated OS user, configure TLS at the reverse proxy, and point the web origin/CORS setting to the installed domain. The API binds to loopback. These templates are examples and are never installed automatically.
