@@ -27,6 +27,10 @@ try {
     adminPassword: await secret("Admin password (12+ characters)"),
     apiPort: await ask("API port", "3001"),
     corsOrigin: await ask("Web origin", "http://localhost:5173"),
+    vpnPublicEndpoint: await ask("VPN public hostname or IP (optional)"),
+    vpnWireguardPublicKey: await ask("CHR WireGuard public key for RouterOS 7 (optional)"),
+    vpnWireguardPort: await ask("CHR WireGuard port", "13231"),
+    vpnL2tpIpsecSecret: await secret("L2TP/IPsec shared secret for RouterOS 6 (optional)"),
     allowExistingInstall: process.argv.includes("--rerun"),
   };
   rl.close();

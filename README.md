@@ -26,3 +26,5 @@ The installer refuses a database that already exists on first install. For a pre
 After starting the API, run `npm run smoke:install`. It checks the installed database, migration ledger, active administrator and the local API health endpoint. It exits nonzero on failure and never prints credentials.
 
 For a Linux host, see `deploy/pppoe-api.service.example` and `deploy/nginx.conf.example`. Replace each placeholder, set a dedicated OS user, configure TLS at the reverse proxy, and point the web origin/CORS setting to the installed domain. The API binds to loopback. These templates are examples and are never installed automatically.
+
+The installer also accepts the VPN public endpoint, CHR WireGuard public key/port (RouterOS 7), and L2TP/IPsec shared secret (RouterOS 6). Provide settings for the RouterOS versions you use. The generated VPN script is returned only once; retain it securely.
