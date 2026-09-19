@@ -29,6 +29,10 @@ try {
   const replay = await call(a,"full-1");
   if (!replay.replay || replay.receiptReference!==full.receiptReference) throw new Error("exact replay failed");
   await expectReject(call(a,"full-1","custom_days",1), /different request/);
+  await expectReject(postRecharge(pool, {
+    actor, clientId:a, mode:"full_cycle", rechargeDate:"2024-01-31",
+    idempotencyKey:"full-1", settlementOwnerUserId:3,
+  }), /different request/);
   const custom = await call(b,"custom-1","custom_days",1);
   if (BigInt(custom.amountMinor)!==1667n || dateText(custom.newExpiry)!=="2024-02-01") throw new Error("custom proration/expiry failed");
   const identical = await Promise.all([call(b,"same-concurrent","custom_days",2),call(b,"same-concurrent","custom_days",2)]);

@@ -28,7 +28,7 @@ export async function postRecharge(pool, input) {
   const key = requireIdentity(input.idempotencyKey, "idempotencyKey");
   const rechargeDate = input.rechargeDate == null ? null : String(input.rechargeDate);
   if (rechargeDate && !/^\d{4}-\d{2}-\d{2}$/.test(rechargeDate)) throw Object.assign(new Error("Invalid recharge date"), { status: 422 });
-  const requestHash = hash({ tenantId, clientId, mode, selectedDays, rechargeDate });
+  const requestHash = hash({ tenantId, clientId, settlementId, mode, selectedDays, rechargeDate });
   const db = await pool.connect();
   try {
     await db.query("BEGIN");
