@@ -5,7 +5,13 @@ import pg from "pg";
 import { quoteIdentifier } from "./config.js";
 
 export const migrationFiles = names => names.filter(name => /^\d{3}_.+\.sql$/.test(name)).sort();
-export const schemaWithoutIncludes = sql => sql.split(/\r?\n/).filter(line => !/^\s*\\ir\s+/i.test(line)).join("\n");
+export const schemaWithoutIncludes = sql => {
+  const lines = sql.split(/\r?\n/);
+  const seedIndex = lines.findIndex(line => /^-- Seed only unresolved legacy examples/.test(line));
+  return (seedIndex < 0 ? lines : lines.slice(0, seedIndex))
+    .filter(line => !/^\s*\\ir\s+/i.test(line))
+    .join("\n");
+};
 export const grantToRole = (sql, role) => sql.replace(/\bTO\s+pppoe_app\b/gi, `TO ${quoteIdentifier(role)}`);
 const digest = sql => crypto.createHash("sha256").update(sql).digest("hex");
 

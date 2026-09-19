@@ -32,3 +32,5 @@ The installer also accepts the VPN public endpoint, CHR WireGuard public key/por
 Migration 013 creates the FreeRADIUS credential tables for a new database. Configure FreeRADIUS SQL and CHR L2TP/RADIUS separately for live RouterOS 6 authentication; the installer does not alter a router.
 
 The portable packaging command emits both `.zip` and `.tar.gz` from the committed Git revision. Extract either archive, run `npm ci`, then complete the interactive installer.
+
+Portable fresh installations start with empty client and package tables. Historical demonstration rows in `server/schema.sql` are skipped by the installer; existing databases are never backfilled or cleared.
