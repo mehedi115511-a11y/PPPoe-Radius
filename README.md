@@ -21,7 +21,7 @@ The installer collects database connection and first-administrator settings, app
 - Live operations, subscriber, infrastructure and finance overview
 - Desktop, tablet and mobile layouts
 
-The installer refuses a database that already exists on first install. For a previously installed copy, run `npm run install:app -- --rerun` with the same database settings; the installer verifies the local database marker and keeps the existing JWT secret and administrator password. Secret prompts require an interactive terminal and hide typed characters.
+The installer accepts an empty pre-created database and needs database creation permission only when the target does not exist. A database with existing tables is refused on first install. For a previously installed copy, run `npm run install:app -- --rerun` with the same database settings; the installer verifies the local database marker and keeps the existing JWT secret and administrator password. Secret prompts require an interactive terminal and hide typed characters.
 
 After starting the API, run `npm run smoke:install`. It checks the installed database, migration ledger, active administrator and the local API health endpoint. It exits nonzero on failure and never prints credentials.
 

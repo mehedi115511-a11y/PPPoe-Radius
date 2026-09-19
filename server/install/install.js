@@ -14,20 +14,29 @@ export async function installApplication(input, rootDir = process.cwd()) {
   });
   if (existingEnv && !input.allowExistingInstall)
     throw new Error("An installation already exists in this directory; use explicit re-run mode");
-  const maintenance = new pg.Client({ connectionString: databaseUrl(config, "postgres") });
-  await maintenance.connect();
+  let db = new pg.Client({ connectionString: databaseUrl(config) });
   try {
-    const found = await maintenance.query("select 1 from pg_database where datname=$1", [config.dbName]);
-    if (found.rowCount && !input.allowExistingInstall)
-      throw new Error("Target database already exists; refusing to modify an unreviewed database");
-    if (!found.rowCount) await maintenance.query(`create database ${quoteIdentifier(config.dbName)}`);
-  } finally {
-    await maintenance.end();
+    await db.connect();
+  } catch (error) {
+    if (error.code !== "3D000" || input.allowExistingInstall) throw error;
+    const maintenance = new pg.Client({ connectionString: databaseUrl(config, "postgres") });
+    await maintenance.connect();
+    try {
+      await maintenance.query(`create database ${quoteIdentifier(config.dbName)}`);
+    } finally {
+      await maintenance.end();
+    }
+    db = new pg.Client({ connectionString: databaseUrl(config) });
+    await db.connect();
   }
-  const db = new pg.Client({ connectionString: databaseUrl(config) });
-  await db.connect();
   try {
-    if (input.allowExistingInstall) {
+    if (!input.allowExistingInstall) {
+      const tables = await db.query(
+        "select count(*)::int count from pg_tables where schemaname not in ('pg_catalog','information_schema')",
+      );
+      if (tables.rows[0].count !== 0)
+        throw new Error("Target database contains tables; refusing to modify an unreviewed database");
+    } else {
       if (!existingEnv) throw new Error("Re-run requires an existing local .env");
       const expected = `DATABASE_URL=${JSON.stringify(databaseUrl(config))}`;
       if (!existingEnv.split(/\r?\n/).includes(expected))
