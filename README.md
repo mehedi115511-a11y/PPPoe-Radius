@@ -20,3 +20,5 @@ The installer collects database connection and first-administrator settings, app
 - Responsive professional dashboard frontend
 - Live operations, subscriber, infrastructure and finance overview
 - Desktop, tablet and mobile layouts
+
+The installer refuses a database that already exists on first install. For a previously installed copy, run `npm run install:app -- --rerun` with the same database settings; the installer verifies the local database marker and keeps the existing JWT secret and administrator password. Secret prompts require an interactive terminal and hide typed characters.
