@@ -30,3 +30,5 @@ For a Linux host, see `deploy/pppoe-api.service.example` and `deploy/nginx.conf.
 The installer also accepts the VPN public endpoint, CHR WireGuard public key/port (RouterOS 7), and L2TP/IPsec shared secret (RouterOS 6). Provide settings for the RouterOS versions you use. The generated VPN script is returned only once; retain it securely.
 
 Migration 013 creates the FreeRADIUS credential tables for a new database. Configure FreeRADIUS SQL and CHR L2TP/RADIUS separately for live RouterOS 6 authentication; the installer does not alter a router.
+
+The portable packaging command emits both `.zip` and `.tar.gz` from the committed Git revision. Extract either archive, run `npm ci`, then complete the interactive installer.

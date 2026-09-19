@@ -3,3 +3,4 @@ dist
 .env
 *.log
 pppoe-radius-*.tar.gz
+pppoe-radius-*.zip
