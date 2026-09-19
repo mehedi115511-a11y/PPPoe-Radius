@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { validateWireGuardPublicKey } from "../vpn-address.js";
 const required=(v,n)=>{const x=String(v||"").trim();if(!x)throw new Error(`${n} is required`);return x};
 const port=(v,n)=>{const x=Number(v);if(!Number.isInteger(x)||x<1||x>65535)throw new Error(`${n} must be 1-65535`);return x};
 export const quoteIdentifier=v=>`"${String(v).replaceAll('"','""')}"`;
@@ -8,7 +9,7 @@ c.vpnWireguardPublicKey=String(i.vpnWireguardPublicKey||"").trim();
 c.vpnWireguardPort=port(i.vpnWireguardPort||13231,"WireGuard port");
 c.vpnL2tpIpsecSecret=String(i.vpnL2tpIpsecSecret||"").trim();
 if(c.vpnPublicEndpoint && /[\s\r\n]/.test(c.vpnPublicEndpoint))throw new Error("VPN endpoint is invalid");
-if(c.vpnWireguardPublicKey && !/^[A-Za-z0-9+/]{43}=$/.test(c.vpnWireguardPublicKey))throw new Error("WireGuard public key is invalid");
+if(c.vpnWireguardPublicKey && !validateWireGuardPublicKey(c.vpnWireguardPublicKey))throw new Error("WireGuard public key is invalid");
 if(c.vpnL2tpIpsecSecret && c.vpnL2tpIpsecSecret.length<16)throw new Error("L2TP/IPsec secret must contain at least 16 characters");
 return c}
 export function databaseUrl(c,d=c.dbName){const u=new URL("postgresql://localhost");u.username=c.dbUser;u.password=c.dbPassword;u.hostname=c.dbHost;u.port=String(c.dbPort);u.pathname=`/${d}`;return u.toString()}
