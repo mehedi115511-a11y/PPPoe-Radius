@@ -897,9 +897,11 @@ function Packages() {
 }
 function VpnManagement() {
   const [items,setItems]=useState([]),[name,setName]=useState(""),[routerOsMajor,setRouterOsMajor]=useState("7"),
-    [script,setScript]=useState(""),[error,setError]=useState(""),[loading,setLoading]=useState(false);
+    [script,setScript]=useState(""),[error,setError]=useState(""),[loading,setLoading]=useState(false),
+    [readiness,setReadiness]=useState(null);
+  const selectedReadiness=readiness?.[routerOsMajor==="6"?"routerOs6":"routerOs7"];
   const load=()=>apiGet("/api/admin/vpn/peers").then(r=>setItems(r.data)).catch(e=>setError(e.message));
-  useEffect(()=>{ load(); },[]);
+  useEffect(()=>{ load(); apiGet("/api/admin/vpn/readiness").then(r=>setReadiness(r.data)).catch(()=>{}); },[]);
   const create=async(event)=>{
     event.preventDefault(); setLoading(true); setError(""); setScript("");
     try {
@@ -918,6 +920,7 @@ function VpnManagement() {
   return <div className="content">
     <section className="page-title"><div><h1>VPN</h1><p>Create RouterOS 6 or 7 ready-to-paste VPN configurations</p></div></section>
     {error&&<div className="data-warning">{error}</div>}
+    {selectedReadiness&&!selectedReadiness.ready&&<div className="data-warning" role="status">RouterOS {routerOsMajor} setup incomplete: {selectedReadiness.missing.join(", ")}</div>}
     <section className="panel vpn-create">
       <h2>Create VPN</h2>
       <form onSubmit={create} className="vpn-form">
@@ -926,7 +929,7 @@ function VpnManagement() {
           <option value="7">RouterOS 7 — WireGuard</option>
           <option value="6">RouterOS 6 — L2TP/IPsec</option>
         </select></label>
-        <button className="quick" disabled={loading}>{loading?"Creating…":"Create VPN & Script"}</button>
+        <button className="quick" disabled={loading||selectedReadiness?.ready===false}>{loading?"Creating…":"Create VPN & Script"}</button>
       </form>
     </section>
     {script&&<section className="panel vpn-script">
@@ -936,10 +939,10 @@ function VpnManagement() {
       <pre>{script}</pre>
     </section>}
     <section className="panel"><div className="panel-title"><div><h2>VPN Connections</h2><p>RouterOS version, protocol and synchronization state</p></div>
-      <button onClick={()=>apiSend("/api/admin/vpn/peers/reconcile","POST").then(load).catch(e=>setError(e.message))}>Reconcile</button></div>
+      <button disabled={readiness?.chrSync?.ready===false} onClick={()=>apiSend("/api/admin/vpn/peers/reconcile","POST").then(load).catch(e=>setError(e.message))}>Reconcile</button></div>
       <div className="table-wrap"><table><thead><tr><th>Name</th><th>RouterOS</th><th>Protocol</th><th>VPN IP</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody>{items.map(peer=><tr key={peer.id}><td>{peer.name}</td><td>OS {peer.routerOsMajor}</td><td>{peer.protocol}</td><td>{peer.tunnelIp}</td><td>{peer.status}</td>
-       <td>{peer.protocol==="wireguard"&&<><button onClick={()=>action(peer.id,"sync")}>Connect</button><button onClick={()=>action(peer.id,"disable")}>Disable</button></>}<button onClick={()=>action(peer.id,"revoke")}>Revoke</button></td>
+       <td>{peer.protocol==="wireguard"&&<><button disabled={readiness?.chrSync?.ready===false} onClick={()=>action(peer.id,"sync")}>Connect</button><button onClick={()=>action(peer.id,"disable")}>Disable</button></>}<button onClick={()=>action(peer.id,"revoke")}>Revoke</button></td>
       </tr>)}</tbody></table></div>
     </section>
   </div>;
