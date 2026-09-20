@@ -22,6 +22,9 @@ export async function saveRouterSecret(db, actor, routerId, purpose, secret, key
     WHERE id=$1 AND owner_user_id=$2 AND deleted_at IS NULL AND status='Disabled'
     ON CONFLICT (router_id,purpose) DO UPDATE
       SET encrypted_value=EXCLUDED.encrypted_value, key_version=app_router_secrets.key_version+1, updated_at=now()
+      WHERE app_router_secrets.owner_user_id=EXCLUDED.owner_user_id
+        AND EXISTS (SELECT 1 FROM app_routers r WHERE r.id=EXCLUDED.router_id
+                    AND r.owner_user_id=EXCLUDED.owner_user_id AND r.deleted_at IS NULL AND r.status='Disabled')
     RETURNING router_id "routerId",purpose,key_version "keyVersion",updated_at "updatedAt"
   `, [id, ownerId, purpose, encrypted]);
   if (!rows[0]) throw rejected('Router not found or must be disabled before credential changes', 409);
