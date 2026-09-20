@@ -107,3 +107,11 @@ test("opens reseller account creation with password validation", async () => {
   expect(within(screen.getByRole("heading", { name: "Add Reseller" }).closest("section")).getByLabelText("Password")).toHaveAttribute("minLength", "12");
   expect(screen.getByRole("button", { name: "Create Reseller" })).toBeInTheDocument();
 });
+
+test("reseller workspace offers sub-reseller creation", async () => {
+  render(<App />);
+  await userEvent.selectOptions(screen.getByLabelText("Preview user role"), "Reseller");
+  await userEvent.click(screen.getByRole("button", { name: "Resellers" }));
+  expect(screen.getByRole("heading", { name: "Add Sub-reseller" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Create Sub-reseller" })).toBeInTheDocument();
+});
