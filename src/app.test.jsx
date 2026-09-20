@@ -1,8 +1,8 @@
 import React from "react";
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeAll, expect, test } from "vitest";
+import { afterEach, beforeAll, expect, test, vi } from "vitest";
 import { App } from "./main.jsx";
 
 beforeAll(() => {
@@ -90,6 +90,29 @@ test("IP Pools menu opens tenant pool form inside dashboard", async () => {
   expect(within(modal).getByLabelText("Pool Name")).toBeRequired();
   expect(within(modal).getByLabelText("IPv4 Network (CIDR)")).toBeRequired();
   expect(within(modal).getByRole("button", { name: "Save IP Pool" })).toBeInTheDocument();
+});
+test("saving an IP pool sends the API request and displays the returned pool", async () => {
+  let created=false;
+  const fetchMock=vi.spyOn(globalThis,"fetch").mockImplementation(async(path,options={})=>{
+    if(path==="/api/ip-pools"&&options.method==="POST"){
+      expect(JSON.parse(options.body)).toEqual({name:"Client pool",network:"10.20.0.0/24",status:"Active"});
+      created=true;
+      return {ok:true,status:201,json:async()=>({data:{id:1,name:"Client pool",network:"10.20.0.0/24",status:"Active"}})};
+    }
+    if(path==="/api/ip-pools")return {ok:true,status:200,json:async()=>({data:created?[{id:1,name:"Client pool",network:"10.20.0.0/24",status:"Active"}]:[]})};
+    throw new Error("Unexpected request: "+path);
+  });
+  try{
+    render(<App />);
+    await userEvent.click(screen.getByRole("button",{name:"IP Pools"}));
+    await screen.findByText("No IP pools yet.");
+    await userEvent.click(screen.getByRole("button",{name:"Add IP Pool"}));
+    await userEvent.type(screen.getByLabelText("Pool Name"),"Client pool");
+    await userEvent.type(screen.getByLabelText("IPv4 Network (CIDR)"),"10.20.0.0/24");
+    await userEvent.click(screen.getByRole("button",{name:"Save IP Pool"}));
+    await waitFor(()=>expect(screen.getByText("10.20.0.0/24")).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith("/api/ip-pools",expect.objectContaining({method:"POST"}));
+  }finally{fetchMock.mockRestore()}
 });
 test("opens dedicated VPN workspace with RouterOS 6 and 7 selection", async () => {
   render(<App />);
