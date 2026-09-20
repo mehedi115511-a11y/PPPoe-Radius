@@ -1092,7 +1092,15 @@ function Simple({ name }) {
 export function App() {
   let [open, setOpen] = useState(false),
     [active, setActive] = useState("Dashboard"),
-    [role, setRole] = useState("Admin");
+    [role, setRole] = useState(() => {
+      try { return JSON.parse(localStorage.getItem("pppoe_user") || "null")?.role || "Admin"; }
+      catch { return "Admin"; }
+    });
+  useEffect(()=>{
+    const syncRole=event=>{setRole(event.detail.role);setActive("Dashboard")};
+    window.addEventListener("pppoe:session",syncRole);
+    return()=>window.removeEventListener("pppoe:session",syncRole);
+  },[]);
   let page =
     active === "Dashboard" ? (
       <Dashboard role={role} />
@@ -1193,6 +1201,7 @@ export function App() {
           <div className="head-actions">
             <select
               className="role-select"
+              disabled={Boolean(localStorage.getItem("pppoe_token"))}
               value={role}
               onChange={(e) => {
                 setRole(e.target.value);

@@ -30,6 +30,7 @@ export function SessionManager() {
     localStorage.setItem("pppoe_token", data.token);
     localStorage.setItem("pppoe_user", JSON.stringify(data.user));
     setSession(data.user);
+    window.dispatchEvent(new CustomEvent("pppoe:session", { detail: data.user }));
   };
   const login = async (event) => {
     event.preventDefault();
@@ -152,7 +153,7 @@ export function SessionManager() {
           ) : (
             <>
               <b>{session.name}</b>
-              <small>Administrator session</small>
+              <small>{session.role} session</small>
             </>
           )}
         </span>
@@ -160,12 +161,12 @@ export function SessionManager() {
           <button onClick={returnToAdmin} disabled={loading}>
             Return to Admin
           </button>
-        ) : (
+        ) : session.role === "Admin" ? (
           <button onClick={loadResellers}>
             <UserRoundCog />
             Login as Reseller
           </button>
-        )}
+        ) : null}
       </div>
       {show && (
         <div className="switcher-backdrop">

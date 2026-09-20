@@ -1,6 +1,6 @@
 import React from "react";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, expect, test } from "vitest";
 import { App } from "./main.jsx";
@@ -114,4 +114,11 @@ test("reseller workspace offers sub-reseller creation", async () => {
   await userEvent.click(screen.getByRole("button", { name: "Resellers" }));
   expect(screen.getByRole("heading", { name: "Add Sub-reseller" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Create Sub-reseller" })).toBeInTheDocument();
+});
+
+test("authenticated reseller session selects the reseller workspace", async () => {
+  render(<App />);
+  act(() => window.dispatchEvent(new CustomEvent("pppoe:session", { detail: { role: "Reseller" } })));
+  await userEvent.click(screen.getByRole("button", { name: "Resellers" }));
+  expect(screen.getByRole("heading", { name: "Add Sub-reseller" })).toBeInTheDocument();
 });
