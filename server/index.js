@@ -114,6 +114,38 @@ app.get(
   },
 );
 
+app.post("/api/admin/resellers", authenticate, requireAdmin, async (req, res, next) => {
+  const name = String(req.body?.name || "").trim();
+  const username = String(req.body?.username || "").trim();
+  const password = req.body?.password;
+  if (!name || name.length > 120 || !/^[A-Za-z_][A-Za-z0-9_.-]{2,62}$/.test(username) ||
+      typeof password !== "string" || password.length < 12 || password.length > 256)
+    return res.status(422).json({ error: "Valid name, username and password (12-256 characters) required" });
+  let db;
+  try {
+    const hash = await bcrypt.hash(password, 12);
+    db = await pool.connect();
+    await db.query("BEGIN");
+    const user = await db.query(
+      "insert into app_users(name,username,password_hash,role,parent_user_id) values($1,$2,$3,'Reseller',$4) returning id,name,username,role,status",
+      [name,username,hash,req.auth.id],
+    );
+    const id = user.rows[0].id;
+    await db.query(
+      "insert into wallet_accounts(tenant_owner_user_id,owner_user_id) values($1,$1),($1,$2)",
+      [id,req.auth.id],
+    );
+    await db.query("COMMIT");
+    res.status(201).json({ data: user.rows[0] });
+  } catch (error) {
+    if (db) await db.query("ROLLBACK").catch(() => {});
+    if (error.code === "23505") return res.status(409).json({ error: "Username already exists" });
+    next(error);
+  } finally {
+    db?.release();
+  }
+});
+
 app.post(
   "/api/admin/impersonate/:id",
   authenticate,
