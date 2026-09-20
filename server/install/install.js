@@ -55,10 +55,26 @@ export async function installApplication(input, rootDir = process.cwd()) {
   await appDb.connect();
   try {
     const hash = await bcrypt.hash(config.adminPassword, 12);
-    await appDb.query(
-      "insert into app_users(name,username,password_hash,role,status) values($1,$2,$3,'Admin','Active') on conflict(username) do nothing",
-      [config.adminName, config.adminUsername, hash],
-    );
+    await appDb.query("BEGIN");
+    try {
+      await appDb.query(
+        "insert into app_users(name,username,password_hash,role,status) values($1,$2,$3,'Admin','Active') on conflict(username) do nothing",
+        [config.adminName, config.adminUsername, hash],
+      );
+      const admin = await appDb.query(
+        "select id from app_users where username=$1 and role='Admin'",
+        [config.adminUsername],
+      );
+      if (!admin.rows[0]) throw new Error("Installer admin username belongs to a different role");
+      await appDb.query(
+        "insert into wallet_accounts(tenant_owner_user_id,owner_user_id) values($1,$1) on conflict(tenant_owner_user_id,owner_user_id,currency) do nothing",
+        [admin.rows[0].id],
+      );
+      await appDb.query("COMMIT");
+    } catch (error) {
+      await appDb.query("ROLLBACK");
+      throw error;
+    }
     const health = (await appDb.query("select current_database() database,current_user username")).rows[0];
     if (!existingEnv) await fs.writeFile(envPath, renderEnv(config), { flag: "wx", mode: 0o600 });
     return { ...health, appliedMigrations: migrations.length };
