@@ -924,25 +924,40 @@ function BillingWorkspace() {
   const [clients,setClients]=useState([]),[clientId,setClientId]=useState(""),
     [mode,setMode]=useState("full_cycle"),[days,setDays]=useState("1"),
     [busy,setBusy]=useState(false),[error,setError]=useState(""),[receipt,setReceipt]=useState(null),
-    [requestKey,setRequestKey]=useState(null);
+    [requestKey,setRequestKey]=useState(null),[quote,setQuote]=useState(null),
+    [quoteVersion,setQuoteVersion]=useState(0);
   useEffect(()=>{
     let active=true;
     apiGet("/api/clients").then(response=>active&&setClients(response.data))
       .catch(e=>active&&setError(e.message));
     return()=>{active=false};
   },[]);
+  useEffect(()=>{
+    let active=true;
+    setQuote(null);
+    if(clientId && (mode!=="custom_days" || Number(days)>0))
+      apiGet(`/api/clients/${clientId}/recharge-quote?mode=${mode}${mode==="custom_days"?`&selectedDays=${encodeURIComponent(days)}`:""}`)
+        .then(result=>active&&setQuote(result.data))
+        .catch(e=>active&&setError(e.message));
+    return()=>{active=false};
+  },[clientId,mode,days,quoteVersion]);
   const submit=async(event)=>{
-    event.preventDefault();setBusy(true);setError("");
+    event.preventDefault();if(!quote || String(quote.clientId)!==String(clientId) || quote.mode!==mode || (mode==='custom_days' && Number(quote.selectedDays)!==Number(days)))return;
+    setBusy(true);setError("");
     const key=requestKey||crypto.randomUUID();
     setRequestKey(key);
     try{
       const response=await apiSend(`/api/clients/${clientId}/recharge`,"POST",
-        {mode,...(mode==="custom_days"?{selectedDays:Number(days)}:{})},{"Idempotency-Key":key});
+        {mode,rechargeDate:quote.rechargeDate,expectedAmountMinor:quote.amountMinor,
+          ...(mode==="custom_days"?{selectedDays:Number(days)}:{})},{"Idempotency-Key":key});
       setReceipt(response.data);setRequestKey(null);
-    }catch(e){setError(e.message)}
+    }catch(e){
+      setError(e.message);
+      if(e.message.includes("quote changed")){setRequestKey(null);setQuoteVersion(v=>v+1)}
+    }
     finally{setBusy(false)}
   };
-  const changeRequest=()=>{setReceipt(null);setRequestKey(null)};
+  const changeRequest=()=>{setReceipt(null);setRequestKey(null);setQuote(null)};
   return <div className="content">
     <section className="page-title"><div><h1>Billing</h1><p>Recharge an owned client from your wallet</p></div></section>
     {error&&<div className="data-warning">{error}</div>}
@@ -954,8 +969,11 @@ function BillingWorkspace() {
         <option value="custom_days">Custom days — prorated</option>
       </select></label>
       {mode==="custom_days"&&<label>Selected days<input type="number" min="1" max="366" value={days} onChange={e=>{setDays(e.target.value);changeRequest()}} required/></label>}
-      <button className="quick" disabled={busy||!clientId}>{busy?"Posting…":"Post Recharge"}</button>
-    </form></section>
+      <button className="quick" disabled={busy||!quote||String(quote.clientId)!==String(clientId)||quote.mode!==mode||(mode==='custom_days'&&Number(quote.selectedDays)!==Number(days))}>{busy?"Posting…":"Post Recharge"}</button>
+    </form>
+    {quote&&<p role="status">Charge preview: ৳{(Number(quote.amountMinor)/100).toFixed(2)}
+      {" "}— New expiry: {String(quote.newExpiry).slice(0,10)}</p>}
+    </section>
     {receipt&&<section className="panel" role="status"><h2>Recharge receipt</h2>
       <p>Reference: {receipt.receiptReference}</p><p>Amount: ৳{(Number(receipt.amountMinor)/100).toFixed(2)}</p>
       <p>Expiry: {String(receipt.previousExpiry).slice(0,10)} → {String(receipt.newExpiry).slice(0,10)}</p>

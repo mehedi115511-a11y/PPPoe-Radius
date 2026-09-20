@@ -1,5 +1,5 @@
 import pg from "pg";
-import { postRecharge } from "./recharge-store.js";
+import { postRecharge, quoteRecharge } from "./recharge-store.js";
 const { Pool } = pg;
 const url = process.env.TEST_DATABASE_URL;
 if (!url || !new URL(url).pathname.includes("pppoe_task44_recharge_")) throw new Error("isolated database required");
@@ -23,7 +23,14 @@ try {
           ('Legacy','rch-legacy','3','500 plan','R','2024-01-01',500,'Offline','Reseller',null,$1)
     returning id`, [pkg.rows[0].id]);
   const [a,b,legacy] = clients.rows.map(row => Number(row.id));
+  const preview=await quoteRecharge(pool,{actor,clientId:a,mode:"custom_days",selectedDays:1});
+  if(preview.amountMinor!=="1667" || !preview.newExpiry) throw new Error("Quote amount or expiry failed");
+  await expectReject(quoteRecharge(pool,{actor,clientId:legacy,mode:"full_cycle"}),/not found/);
   await pool.query("insert into wallet_accounts(tenant_owner_user_id,owner_user_id,balance_minor) values(2,2,300000),(2,1,0)");
+  await expectReject(postRecharge(pool, {
+    actor,clientId:a,mode:"full_cycle",rechargeDate:"2024-01-31",
+    idempotencyKey:"quote-mismatch",settlementOwnerUserId:1,expectedAmountMinor:"1",
+  }),/quote changed/);
   const full = await call(a,"full-1");
   if (BigInt(full.amountMinor)!==50000n || dateText(full.newExpiry)!=="2024-02-29") throw new Error(`full cycle amount/expiry failed ${full.amountMinor}/${dateText(full.newExpiry)}`);
   const replay = await call(a,"full-1");

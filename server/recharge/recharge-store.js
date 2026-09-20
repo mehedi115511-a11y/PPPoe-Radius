@@ -15,6 +15,38 @@ const columns = `id,receipt_reference "receiptReference",tenant_owner_user_id "t
  wallet_ledger_transaction_id "walletTransactionId",idempotency_key "idempotencyKey",
  request_fingerprint "requestFingerprint",created_at "createdAt"`;
 
+const packagePriceMinor = priceText => {
+  const price = /^(\d+)(?:\.(\d{1,2}))?$/.exec(priceText);
+  if (!price) throw new Error("Invalid package price");
+  return BigInt(price[1]) * 100n + BigInt((price[2] || "").padEnd(2, "0"));
+};
+
+export async function quoteRecharge(pool, input) {
+  const tenantId = parseId(input.actor?.id, "tenant");
+  if (input.actor?.status !== "Active") throw Object.assign(new Error("Active actor required"), { status: 403 });
+  const clientId = parseId(input.clientId, "client");
+  const mode = String(input.mode || "");
+  if (!["full_cycle","custom_days"].includes(mode)) throw Object.assign(new Error("Invalid recharge mode"), { status: 422 });
+  const selectedDays = mode === "custom_days" ? parseId(input.selectedDays, "selected days") : null;
+  const { rows } = await pool.query(
+    `select c.expires_at::text previous_expiry,p.price::text package_price,p.validity_days
+     from app_clients c join app_packages p on p.id=c.package_id
+     where c.id=$1 and c.owner_user_id=$2 and p.owner_user_id=$2`, [clientId,tenantId]);
+  if (!rows[0]) throw Object.assign(new Error("Owned client not found"), { status: 404 });
+  const amount = calculateRechargeAmountMinor({
+    mode, packagePriceMinor:packagePriceMinor(rows[0].package_price),
+    selectedDays, validityDays:rows[0].validity_days,
+  });
+  if (amount <= 0n) throw Object.assign(new Error("Recharge amount must be positive"), { status: 422 });
+  const date = (await pool.query("select current_date::text value")).rows[0].value;
+  const expiry = (await pool.query(mode === "full_cycle"
+    ? "select ($1::date + interval '1 month')::date::text value"
+    : "select ($1::date + $2::integer)::date::text value",
+    mode === "full_cycle" ? [date] : [date,selectedDays])).rows[0].value;
+  return { clientId,mode,selectedDays,rechargeDate:date,amountMinor:amount.toString(),
+    previousExpiry:rows[0].previous_expiry,newExpiry:expiry };
+}
+
 export async function postRecharge(pool, input) {
   if (!input.actor || input.actor.status !== "Active") throw Object.assign(new Error("Active actor required"), { status: 403 });
   if (input.actor.impersonatedBy) throw Object.assign(new Error("Impersonated financial write denied"), { status: 403 });
@@ -28,7 +60,10 @@ export async function postRecharge(pool, input) {
   const key = requireIdentity(input.idempotencyKey, "idempotencyKey");
   const rechargeDate = input.rechargeDate == null ? null : String(input.rechargeDate);
   if (rechargeDate && !/^\d{4}-\d{2}-\d{2}$/.test(rechargeDate)) throw Object.assign(new Error("Invalid recharge date"), { status: 422 });
-  const requestHash = hash({ tenantId, clientId, settlementId, mode, selectedDays, rechargeDate });
+  const expectedAmountMinor = input.expectedAmountMinor == null ? null : String(input.expectedAmountMinor);
+  if (expectedAmountMinor !== null && !/^(0|[1-9]\d*)$/.test(expectedAmountMinor))
+    throw Object.assign(new Error("Invalid expected amount"), { status: 422 });
+  const requestHash = hash({ tenantId, clientId, settlementId, mode, selectedDays, rechargeDate, expectedAmountMinor });
   const db = await pool.connect();
   try {
     await db.query("BEGIN");
@@ -46,10 +81,9 @@ export async function postRecharge(pool, input) {
        where c.id=$1 and c.owner_user_id=$2 and p.owner_user_id=$2 FOR UPDATE OF c`, [clientId, tenantId]);
     const target = found.rows[0];
     if (!target || target.owner_user_id == null) throw Object.assign(new Error("Owned client not found"), { status: 404 });
-    const price = /^(\d+)(?:\.(\d{1,2}))?$/.exec(target.package_price);
-    if (!price) throw new Error("Invalid package price");
-    const packagePriceMinor = BigInt(price[1]) * 100n + BigInt((price[2] || "").padEnd(2, "0"));
-    const amount = calculateRechargeAmountMinor({ mode, packagePriceMinor, selectedDays, validityDays: target.validity_days });
+    const amount = calculateRechargeAmountMinor({ mode, packagePriceMinor:packagePriceMinor(target.package_price), selectedDays, validityDays: target.validity_days });
+    if (expectedAmountMinor !== null && amount.toString() !== expectedAmountMinor)
+      throw Object.assign(new Error("Recharge quote changed; review the amount again"), { status: 409 });
     if (amount <= 0n)
       throw Object.assign(new Error("Recharge amount must be positive"), { status: 422 });
     const effectiveDate = rechargeDate || (await db.query("select current_date::text value")).rows[0].value;

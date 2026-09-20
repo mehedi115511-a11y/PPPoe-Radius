@@ -9,7 +9,7 @@ import rateLimit from "express-rate-limit";
 import { renderRouterOsPeerScript } from "./vpn-config.js";
 import { revalidateSession } from "./security/session-revalidation.js";
 import { tenantScope, resolveTenantPackage } from "./security/tenant-queries.js";
-import { postRecharge } from "./recharge/recharge-store.js";
+import { postRecharge, quoteRecharge } from "./recharge/recharge-store.js";
 import { createChrPeerSync } from "./chr-peer-sync.js";
 import { routerOsRestAdapterFromEnv } from "./routeros-rest-adapter.js";
 import { applyPeerOperation, reconcilePeers, revokeL2tpProfile } from "./vpn-peer-service.js";
@@ -601,6 +601,14 @@ app.get("/api/recharges/:id", authenticate, async (req, res, next) => {
     res.json({ data: rows[0] });
   } catch (error) { next(error); }
 });
+app.get("/api/clients/:id/recharge-quote", authenticate, async (req,res,next) => {
+  try {
+    const data = await quoteRecharge(pool, {
+      actor:req.auth,clientId:req.params.id,mode:req.query.mode,selectedDays:req.query.selectedDays,
+    });
+    res.set("Cache-Control","no-store").json({ data });
+  } catch(error) { next(error); }
+});
 app.post("/api/clients/:id/recharge", authenticate, async (req, res, next) => {
   try {
     const idempotencyKey = req.get("Idempotency-Key");
@@ -608,6 +616,7 @@ app.post("/api/clients/:id/recharge", authenticate, async (req, res, next) => {
     const data = await postRecharge(pool, {
       actor: req.auth, clientId: Number(req.params.id), mode: req.body?.mode,
       selectedDays: req.body?.selectedDays, rechargeDate: req.body?.rechargeDate,
+      expectedAmountMinor: req.body?.expectedAmountMinor,
       idempotencyKey, settlementOwnerUserId: Number(process.env.BILLING_WALLET_OWNER_USER_ID),
     });
     res.status(data.replay ? 200 : 201).json({ data });
