@@ -38,6 +38,7 @@ import {
 } from "recharts";
 import "./styles.css";
 import "./session.jsx";
+import RouterWorkspace from "./RouterWorkspace.jsx";
 const traffic = [
   { t: "12 AM", down: 65 },
   { t: "4 AM", down: 48 },
@@ -1228,6 +1229,8 @@ export function App() {
       <Packages />
     ) : active === "IP Pools" ? (
       <IpPools />
+    ) : active === "Routers / NAS" ? (
+      <RouterWorkspace />
     ) : active === "VPN" ? (
       <VpnManagement />
     ) : active === "Resellers" ? (
