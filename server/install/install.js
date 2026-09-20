@@ -41,6 +41,9 @@ export async function installApplication(input, rootDir = process.cwd()) {
       const expected = `DATABASE_URL=${JSON.stringify(databaseUrl(config))}`;
       if (!existingEnv.split(/\r?\n/).includes(expected))
         throw new Error("Re-run database does not match the existing installation");
+      const adminLine = `ADMIN_USERNAME=${JSON.stringify(config.adminUsername)}`;
+      if (!existingEnv.split(/\r?\n/).includes(adminLine))
+        throw new Error("Re-run administrator does not match the existing installation");
       const marker = await db.query("select to_regclass('public.app_schema_migrations') marker");
       if (!marker.rows[0].marker) throw new Error("Target has no installer migration marker");
       const jwtLine = existingEnv.split(/\r?\n/).find(line => line.startsWith("JWT_SECRET="));
@@ -66,6 +69,7 @@ export async function installApplication(input, rootDir = process.cwd()) {
         [config.adminUsername],
       );
       if (!admin.rows[0]) throw new Error("Installer admin username belongs to a different role");
+      config.billingWalletOwnerUserId = admin.rows[0].id;
       await appDb.query(
         "insert into wallet_accounts(tenant_owner_user_id,owner_user_id) values($1,$1) on conflict(tenant_owner_user_id,owner_user_id,currency) do nothing",
         [admin.rows[0].id],
