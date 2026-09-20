@@ -1,6 +1,7 @@
 import { listRouters, createRouter, updateRouter, deleteRouter } from './catalog.js';
 import { saveRouterSecret } from './secret-store.js';
 import { revokeRouterSecret } from './secret-revoke.js';
+import { getRouterSecretStatus } from './secret-status.js';
 
 /** Mount under /api; authentication must run before every route. */
 export function registerRouterRoutes(app, db, authenticate) {
@@ -16,6 +17,7 @@ export function registerRouterRoutes(app, db, authenticate) {
   app.get('/api/routers', authenticate, execute((req) => listRouters(db, req.auth)));
   app.post('/api/routers', authenticate, execute((req) => createRouter(db, req.auth, req.body), 201));
   app.put('/api/routers/:id', authenticate, execute((req) => updateRouter(db, req.auth, req.params.id, req.body)));
+  app.get('/api/routers/:id/secrets', authenticate, execute((req) => getRouterSecretStatus(db, req.auth, req.params.id)));
   app.put('/api/routers/:id/secrets/:purpose', authenticate, execute((req) => {
     const body = req.body;
     if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 1 || !Object.hasOwn(body, 'secret')) {
