@@ -1,5 +1,6 @@
 import { listRouters, createRouter, updateRouter, deleteRouter } from './catalog.js';
 import { saveRouterSecret } from './secret-store.js';
+import { revokeRouterSecret } from './secret-revoke.js';
 
 /** Mount under /api; authentication must run before every route. */
 export function registerRouterRoutes(app, db, authenticate) {
@@ -22,5 +23,6 @@ export function registerRouterRoutes(app, db, authenticate) {
     }
     return saveRouterSecret(db, req.auth, req.params.id, req.params.purpose, body.secret, process.env.ROUTER_SECRET_KEY_HEX);
   }));
+  app.delete('/api/routers/:id/secrets/:purpose', authenticate, execute((req) => revokeRouterSecret(db, req.auth, req.params.id, req.params.purpose), 204));
   app.delete('/api/routers/:id', authenticate, execute((req) => deleteRouter(db, req.auth, req.params.id), 204));
 }
