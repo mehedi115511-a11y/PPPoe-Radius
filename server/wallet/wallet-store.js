@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { assertWalletAccess, minorUnits, requireIdentity } from "./ledger.js";
+import { minorUnits, requireIdentity } from "./ledger.js";
 
 const positiveId = (value, label) => {
   if (!Number.isSafeInteger(value) || value <= 0) throw new TypeError(`Invalid ${label}`);
@@ -25,7 +25,9 @@ export async function postWalletTransfer(pool, input) {
   if (!input.actor || input.actor.status !== "Active" || input.actor.impersonatedBy) {
     throw new Error("Active non-impersonated actor required");
   }
-  assertWalletAccess(input.actor, input.tenantOwnerUserId);
+  const tenantId=positiveId(input.tenantOwnerUserId,"tenant owner");
+  if (positiveId(input.actor.userId,"actor")!==tenantId)
+    throw new Error("Wallet write access denied for another tenant");
   if (input.debitOwnerUserId === input.creditOwnerUserId) {
     throw new Error("Debit and credit wallets must differ");
   }

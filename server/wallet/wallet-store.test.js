@@ -32,6 +32,7 @@ describe("wallet transfer fail-closed preflight", () => {
     await expect(postWalletTransfer(pool, { ...base, actor: { ...base.actor, status: "Suspended" } })).rejects.toThrow();
     await expect(postWalletTransfer(pool, { ...base, actor: { ...base.actor, impersonatedBy: { id: 1 } } })).rejects.toThrow();
     await expect(postWalletTransfer(pool, { ...base, actor: { userId: 4, role: "Reseller", status: "Active" } })).rejects.toThrow(/denied/);
+    await expect(postWalletTransfer(pool, { ...base, actor: { userId: 1, role: "Admin", status: "Active", permissions: ["wallet:read:any"] } })).rejects.toThrow(/write access denied/);
     expect(pool.connect).not.toHaveBeenCalled();
   });
 
