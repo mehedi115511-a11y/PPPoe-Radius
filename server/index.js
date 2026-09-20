@@ -9,7 +9,7 @@ import rateLimit from "express-rate-limit";
 import { renderRouterOsPeerScript } from "./vpn-config.js";
 import { revalidateSession } from "./security/session-revalidation.js";
 import { tenantScope, resolveTenantPackage } from "./security/tenant-queries.js";
-import { postRecharge, quoteRecharge } from "./recharge/recharge-store.js";
+import { postRecharge, quoteRecharge, reconcileRechargeReceipt } from "./recharge/recharge-store.js";
 import { createChrPeerSync } from "./chr-peer-sync.js";
 import { routerOsRestAdapterFromEnv } from "./routeros-rest-adapter.js";
 import { applyPeerOperation, reconcilePeers, revokeL2tpProfile } from "./vpn-peer-service.js";
@@ -681,6 +681,12 @@ app.get("/api/recharges/:id", authenticate, async (req, res, next) => {
     if (!rows[0]) return res.status(404).json({ error: "Receipt not found" });
     res.json({ data: rows[0] });
   } catch (error) { next(error); }
+});
+app.get("/api/recharges/:id/reconciliation", authenticate, async (req,res,next) => {
+  try {
+    const data=await reconcileRechargeReceipt(pool,{actor:req.auth,receiptId:req.params.id});
+    res.set("Cache-Control","no-store").json({data});
+  }catch(error){next(error)}
 });
 app.get("/api/clients/:id/recharge-quote", authenticate, async (req,res,next) => {
   try {

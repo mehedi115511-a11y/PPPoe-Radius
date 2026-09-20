@@ -1,5 +1,5 @@
 import pg from "pg";
-import { postRecharge, quoteRecharge } from "./recharge-store.js";
+import { postRecharge, quoteRecharge, reconcileRechargeReceipt } from "./recharge-store.js";
 const { Pool } = pg;
 const url = process.env.TEST_DATABASE_URL;
 if (!url || !new URL(url).pathname.includes("pppoe_task44_recharge_")) throw new Error("isolated database required");
@@ -37,6 +37,10 @@ try {
   }),/quote changed/);
   const full = await call(a,"full-1");
   if (BigInt(full.amountMinor)!==50000n || dateText(full.newExpiry)!=="2024-02-29") throw new Error(`full cycle amount/expiry failed ${full.amountMinor}/${dateText(full.newExpiry)}`);
+  const verified=await reconcileRechargeReceipt(pool,{actor,receiptId:full.id});
+  if(verified.status!=="balanced" || verified.debitMinor!=="50000" || verified.creditMinor!=="50000")
+    throw new Error("Receipt reconciliation failed");
+  await expectReject(reconcileRechargeReceipt(pool,{actor:{...actor,id:3},receiptId:full.id}),/not found/);
   const replay = await call(a,"full-1");
   if (!replay.replay || replay.receiptReference!==full.receiptReference) throw new Error("exact replay failed");
   await expectReject(call(a,"full-1","custom_days",1), /different request/);
@@ -69,6 +73,12 @@ try {
   if (balanced.rowCount) throw new Error("unbalanced ledger");
   await expectReject(pool.query("update wallet_ledger_entries set amount_minor=1 where id=(select min(id) from wallet_ledger_entries)"),/append-only/);
   await expectReject(pool.query("delete from app_recharge_receipts where id=$1",[full.id]),/immutable/);
+  await pool.query(`insert into wallet_ledger_entries(transaction_id,wallet_account_id,direction,amount_minor)
+    select r.wallet_ledger_transaction_id,a.id,'credit',1 from app_recharge_receipts r
+    join wallet_accounts a on a.tenant_owner_user_id=r.tenant_owner_user_id and a.owner_user_id=r.tenant_owner_user_id
+    where r.id=$1`,[full.id]);
+  const mismatch=await reconcileRechargeReceipt(pool,{actor,receiptId:full.id});
+  if(mismatch.status!=="mismatch") throw new Error("Reconciliation failed to detect extra entry");
   const counts=await pool.query("select count(*)::int receipts from app_recharge_receipts");
   console.log(`RECHARGE_INTEGRATION_PASS receipts=${counts.rows[0].receipts} replay=1 identical_concurrency=1 insufficient_concurrency=1 rollback=1 balanced=1 immutable=1`);
 } finally { await pool.end(); }

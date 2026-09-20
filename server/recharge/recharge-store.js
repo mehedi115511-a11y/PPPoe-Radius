@@ -126,3 +126,32 @@ export async function postRecharge(pool, input) {
     db.release();
   }
 }
+
+export async function reconcileRechargeReceipt(pool, input) {
+  if (input.actor?.status !== "Active") throw Object.assign(new Error("Active actor required"), { status: 403 });
+  const tenantId = parseId(input.actor.id, "tenant");
+  const receiptId = parseId(input.receiptId, "receipt");
+  const {rows}=await pool.query(`
+    select r.receipt_reference "receiptReference",r.calculated_amount_minor::text "amountMinor",
+      r.request_fingerprint "receiptFingerprint",t.request_fingerprint "ledgerFingerprint",
+      t.operation,t.tenant_owner_user_id "ledgerTenant",
+      count(e.id)::integer "entryCount",count(distinct a.id)::integer "accountCount",
+      coalesce(sum(case when e.direction='debit' and a.owner_user_id=$2 then e.amount_minor else 0 end),0)::text "debitMinor",
+      coalesce(sum(case when e.direction='credit' and a.owner_user_id<>$2 then e.amount_minor else 0 end),0)::text "creditMinor",
+      coalesce(bool_and(a.tenant_owner_user_id=$2),false) "accountsOwned"
+    from app_recharge_receipts r
+      join wallet_ledger_transactions t on t.id=r.wallet_ledger_transaction_id
+      left join wallet_ledger_entries e on e.transaction_id=t.id
+      left join wallet_accounts a on a.id=e.wallet_account_id
+    where r.id=$1 and r.tenant_owner_user_id=$2
+    group by r.id,t.id`,[receiptId,tenantId]);
+  const item=rows[0];
+  if(!item) throw Object.assign(new Error("Receipt not found"),{status:404});
+  const balanced=item.entryCount===2 && item.accountCount===2 && item.accountsOwned &&
+    Number(item.ledgerTenant)===tenantId && item.operation==="client_recharge" &&
+    item.receiptFingerprint===item.ledgerFingerprint &&
+    item.debitMinor===item.amountMinor && item.creditMinor===item.amountMinor;
+  return {receiptReference:item.receiptReference,amountMinor:item.amountMinor,
+    debitMinor:item.debitMinor,creditMinor:item.creditMinor,entryCount:item.entryCount,
+    status:balanced?"balanced":"mismatch"};
+}

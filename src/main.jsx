@@ -925,7 +925,7 @@ function BillingWorkspace() {
     [mode,setMode]=useState("full_cycle"),[days,setDays]=useState("1"),
     [busy,setBusy]=useState(false),[error,setError]=useState(""),[receipt,setReceipt]=useState(null),
     [requestKey,setRequestKey]=useState(null),[quote,setQuote]=useState(null),
-    [quoteVersion,setQuoteVersion]=useState(0);
+    [quoteVersion,setQuoteVersion]=useState(0),[reconciliation,setReconciliation]=useState(null);
   useEffect(()=>{
     let active=true;
     apiGet("/api/clients").then(response=>active&&setClients(response.data))
@@ -950,14 +950,17 @@ function BillingWorkspace() {
       const response=await apiSend(`/api/clients/${clientId}/recharge`,"POST",
         {mode,rechargeDate:quote.rechargeDate,expectedAmountMinor:quote.amountMinor,
           ...(mode==="custom_days"?{selectedDays:Number(days)}:{})},{"Idempotency-Key":key});
-      setReceipt(response.data);setRequestKey(null);
+      setReceipt(response.data);setReconciliation(null);setRequestKey(null);
     }catch(e){
       setError(e.message);
       if(e.message.includes("quote changed")){setRequestKey(null);setQuoteVersion(v=>v+1)}
     }
     finally{setBusy(false)}
   };
-  const changeRequest=()=>{setReceipt(null);setRequestKey(null);setQuote(null)};
+  const changeRequest=()=>{setReceipt(null);setReconciliation(null);setRequestKey(null);setQuote(null)};
+  const verifyReceipt=()=>apiGet(`/api/recharges/${receipt.id}/reconciliation`)
+    .then(result=>{setReconciliation(result.data);setError("")})
+    .catch(e=>setError(e.message));
   return <div className="content">
     <section className="page-title"><div><h1>Billing</h1><p>Recharge an owned client from your wallet</p></div></section>
     {error&&<div className="data-warning">{error}</div>}
@@ -977,6 +980,8 @@ function BillingWorkspace() {
     {receipt&&<section className="panel" role="status"><h2>Recharge receipt</h2>
       <p>Reference: {receipt.receiptReference}</p><p>Amount: ৳{(Number(receipt.amountMinor)/100).toFixed(2)}</p>
       <p>Expiry: {String(receipt.previousExpiry).slice(0,10)} → {String(receipt.newExpiry).slice(0,10)}</p>
+      <button onClick={verifyReceipt}>Verify receipt</button>
+      {reconciliation&&<p>Ledger reconciliation: {reconciliation.status} ({reconciliation.entryCount} entries)</p>}
     </section>}
   </div>;
 }
