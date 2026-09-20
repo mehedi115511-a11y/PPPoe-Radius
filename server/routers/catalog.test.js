@@ -1,0 +1,11 @@
+import {test,expect,vi} from 'vitest';
+import {listRouters,createRouter,updateRouter,deleteRouter} from './catalog.js';
+const actor={id:12,role:'Reseller',status:'Active'};
+const input={name:'NAS One',host:'192.0.2.2',port:8729,routerOsVersion:'7',status:'Disabled'};
+test('list binds exact owner and excludes deleted routers',async()=>{const db={query:vi.fn().mockResolvedValue({rows:[]})};expect(await listRouters(db,actor)).toEqual([]);expect(db.query.mock.calls[0][0]).toContain('deleted_at IS NULL');expect(db.query.mock.calls[0][1]).toEqual([12])});
+test('create defaults to validated disabled router without credentials',async()=>{const db={query:vi.fn().mockResolvedValue({rows:[{id:4}]})};expect(await createRouter(db,actor,input)).toEqual({id:4});expect(db.query.mock.calls[0][1]).toEqual([12,'NAS One','192.0.2.2',8729,'7','Disabled'])});
+test('update requires exact owner and existing active record',async()=>{const db={query:vi.fn().mockResolvedValue({rows:[]})};await expect(updateRouter(db,actor,'3',input)).rejects.toMatchObject({status:404});expect(db.query.mock.calls[0][1].slice(0,2)).toEqual([3,12]);expect(db.query.mock.calls[0][0]).toContain('deleted_at IS NULL')});
+test('delete soft-disables only own router',async()=>{const db={query:vi.fn().mockResolvedValue({rows:[{id:3}]})};expect(await deleteRouter(db,actor,'3')).toEqual({id:3});expect(db.query.mock.calls[0][0]).toContain('deleted_at=now()');expect(db.query.mock.calls[0][1]).toEqual([3,12])});
+test('cross tenant missing router cannot be deleted',async()=>{const db={query:vi.fn().mockResolvedValue({rows:[]})};await expect(deleteRouter(db,actor,'4')).rejects.toMatchObject({status:404})});
+test('suspended and impersonated actors cannot access catalog',async()=>{const db={query:vi.fn()};await expect(listRouters(db,{...actor,status:'Suspended'})).rejects.toMatchObject({status:403});await expect(createRouter(db,{...actor,impersonatedBy:{id:1}},input)).rejects.toMatchObject({status:403});expect(db.query).not.toHaveBeenCalled()});
+test('database uniqueness conflict produces safe error',async()=>{const db={query:vi.fn().mockRejectedValue({code:'23505'})};await expect(createRouter(db,actor,input)).rejects.toMatchObject({status:409})});
