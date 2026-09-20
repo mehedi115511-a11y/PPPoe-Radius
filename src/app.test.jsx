@@ -80,6 +80,17 @@ test("opens the package management form", async () => {
     "1",
   );
 });
+test("IP Pools menu opens tenant pool form inside dashboard", async () => {
+  render(<App />);
+  await userEvent.click(screen.getByRole("button", { name: "IP Pools" }));
+  expect(screen.getByRole("heading", { name: "IP Pools" })).toBeInTheDocument();
+  expect(screen.getByText(/does not configure a MikroTik router/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Add IP Pool" }));
+  const modal=screen.getByRole("heading", { name: "Add IP Pool" }).closest("form");
+  expect(within(modal).getByLabelText("Pool Name")).toBeRequired();
+  expect(within(modal).getByLabelText("IPv4 Network (CIDR)")).toBeRequired();
+  expect(within(modal).getByRole("button", { name: "Save IP Pool" })).toBeInTheDocument();
+});
 test("opens dedicated VPN workspace with RouterOS 6 and 7 selection", async () => {
   render(<App />);
   await userEvent.click(screen.getByRole("button", { name: "VPN" }));

@@ -896,6 +896,61 @@ function Packages() {
     </div>
   );
 }
+function IpPools() {
+  const [items,setItems]=useState([]),[loading,setLoading]=useState(true),
+    [saving,setSaving]=useState(false),[error,setError]=useState(""),
+    [editing,setEditing]=useState(null),[open,setOpen]=useState(false);
+  const load=()=>apiGet("/api/ip-pools")
+    .then(response=>{setItems(response.data);setError("")})
+    .catch(e=>setError(e.message)).finally(()=>setLoading(false));
+  useEffect(()=>{load()},[]);
+  const save=async event=>{
+    event.preventDefault();setSaving(true);setError("");
+    try {
+      const body=Object.fromEntries(new FormData(event.currentTarget));
+      await apiSend(editing?`/api/ip-pools/${editing.id}`:"/api/ip-pools",editing?"PATCH":"POST",body);
+      setOpen(false);setEditing(null);await load();
+    }catch(e){setError(e.message)}
+    finally{setSaving(false)}
+  };
+  const remove=async()=>{
+    if(!editing||!window.confirm(`Delete software IP pool ${editing.name}?`))return;
+    setSaving(true);
+    try{await apiSend(`/api/ip-pools/${editing.id}`,"DELETE");setOpen(false);setEditing(null);await load()}
+    catch(e){setError(e.message)}
+    finally{setSaving(false)}
+  };
+  return <div className="content">
+    <section className="page-title"><div><h1>IP Pools</h1><p>Tenant IP ranges for planning PPPoE address allocation</p></div>
+      <button className="quick" onClick={()=>{setEditing(null);setOpen(true);setError("")}}><Plus/>Add IP Pool</button>
+    </section>
+    <section className="panel"><p>These are software pool definitions. Adding one here does not configure a MikroTik router.</p></section>
+    {error&&<div className="data-warning" role="alert">{error}</div>}
+    <section className="package-grid">
+      {loading?<div className="data-loading">Loading IP pools...</div>:items.length===0?<div className="panel">No IP pools yet.</div>:items.map(item=>
+        <article className="package-card" key={item.id}>
+          <div><span className={item.status.toLowerCase()}>{item.status}</span>
+            <button aria-label={`Edit pool ${item.name}`} onClick={()=>{setEditing(item);setOpen(true);setError("")}}>...</button></div>
+          <Network/><h2>{item.name}</h2><strong>{item.network}</strong>
+          <p>Software definition</p>
+        </article>)}
+    </section>
+    {open&&<div className="client-modal-backdrop"><form className="client-modal package-modal" onSubmit={save}>
+      <header><div><h2>{editing?"Edit IP Pool":"Add IP Pool"}</h2><p>Use a non-overlapping IPv4 network (CIDR).</p></div>
+        <button type="button" aria-label="Close IP pool form" onClick={()=>setOpen(false)}><X/></button></header>
+      {error&&<div className="auth-error" role="alert">{error}</div>}
+      <div className="client-form-grid">
+        <label>Pool Name<input name="name" defaultValue={editing?.name||""} minLength="2" maxLength="80" required/></label>
+        <label>IPv4 Network (CIDR)<input name="network" placeholder="10.20.0.0/24" defaultValue={editing?.network||""} required/></label>
+        <label>Status<select name="status" defaultValue={editing?.status||"Active"}><option>Active</option><option>Disabled</option></select></label>
+      </div>
+      <footer>{editing&&<button type="button" className="danger" disabled={saving} onClick={remove}>Delete IP Pool</button>}
+        <span/><button type="button" onClick={()=>setOpen(false)}>Cancel</button>
+        <button className="primary" disabled={saving}>{saving?"Saving...":"Save IP Pool"}</button>
+      </footer>
+    </form></div>}
+  </div>;
+}
 function WalletWorkspace({role}) {
   const [wallet,setWallet]=useState(null),[entries,setEntries]=useState([]),
     [receipts,setReceipts]=useState([]),[error,setError]=useState(""),
@@ -1171,6 +1226,8 @@ export function App() {
       <Clients />
     ) : active === "Packages" ? (
       <Packages />
+    ) : active === "IP Pools" ? (
+      <IpPools />
     ) : active === "VPN" ? (
       <VpnManagement />
     ) : active === "Resellers" ? (

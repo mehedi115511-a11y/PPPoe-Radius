@@ -59,3 +59,10 @@ Status flow: TODO → IN_PROGRESS → WAITING_DEPENDENCY/BLOCKED → READY_FOR_R
 - Temporary isolated PostgreSQL database with ten migrations: authenticated HTTP create 201, exact replay 200, changed request 409, malformed amount 422, cross-tenant reference claim 409, tenant listing isolation, reseller admin denial 403, impersonated financial write denial 403 and suspended token denial 401. Wallet balance and ledger entries remained zero.
 - Concurrent identical HTTP submissions returned exactly one 201 and one 200 referencing the same request; persisted count was one. No production migration, funding or router mutation.
 - Portable ZIP/TAR generated from committed source. Next safe work: externally verifiable funding settlement integration or credential-independent network and installer tests; live CHR requires configured access and production deployment requires separate approval.
+
+
+## 2026-09-20 IP pool frontend/backend feature
+- The dashboard IP Pools item now opens a real in-pane workspace with list, add, edit and delete forms. It clearly labels entries as software definitions; RouterOS pool provisioning remains a separate network integration task.
+- `/api/ip-pools` GET/POST and `/api/ip-pools/:id` PATCH/DELETE resolve tenant identity from the authenticated session. Admin also acts only on its own pool catalog; cross-tenant mutation returns 404.
+- Migration 014 creates additive tenant-owned CIDR catalog with name/network uniqueness. Creation validates canonical IPv4 /8 through /30 and rejects overlap under a per-tenant transaction lock. Production migration is unapproved.
+- Isolated database migration twice and CRUD/overlap/tenant denial tests passed. The frontend menu/form test passed. Next ready UI work: router/NAS catalog and explicit RouterOS pool readback/provisioning when credentials and deployment scope permit.
