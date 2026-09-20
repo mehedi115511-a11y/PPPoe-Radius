@@ -34,3 +34,11 @@ Worktrees:
 - Production: `/opt/pppoe-radius-integration` (read-only until explicit deployment approval)
 
 Status flow: TODO → IN_PROGRESS → WAITING_DEPENDENCY/BLOCKED → READY_FOR_REVIEW → VERIFIED → MERGED → DEPLOYED.
+
+## 2026-09-20 integration continuation
+- Verified clean local and origin integration HEAD `dbc0e83b51a918ebae25742bd6b9a434f8d0a8a0` before this coordination update.
+- Recharge quote guards stale UI selection and rejects changed charge; isolated PostgreSQL recharge evidence `RECHARGE_INTEGRATION_PASS`.
+- Fresh installer creates an empty admin wallet and writes its ID as `BILLING_WALLET_OWNER_USER_ID`; rerun validates administrator identity.
+- Bootstrap and admin reseller creation provision zero-balance tenant/settlement wallets. Reseller-only child creation and tenant-scoped listing are implemented; the Resellers UI exposes both forms by role.
+- Isolated PostgreSQL: `INSTALL_WALLET_PASS`, `BOOTSTRAP_WALLETS_PASS`, `RESELLER_API_PASS`, `INSTALL_SETTLEMENT_PASS`, `SUBRESELLER_API_PASS`. Latest Vitest: 86/86 in 20 files; build exit 0. Portable archives rebuilt from committed source.
+- Next: controlled funding/reconciliation and end-to-end configuration of recharge; live CHR credentials and production deployment remain separately approval-dependent. No production data or services changed.

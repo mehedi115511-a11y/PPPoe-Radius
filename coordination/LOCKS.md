@@ -23,3 +23,8 @@
 
 ## Deployment lock
 None. Production remains unchanged.
+
+## 2026-09-20 integration handoff
+- Wallet and reseller work continues in `/opt/pppoe-radius-chat-c`; last verified clean remote-matched feature SHA `dbc0e83b51a918ebae25742bd6b9a434f8d0a8a0`.
+- Settlement funding and production backfill/deployment remain gated by exact reconciliation and deployment lock. Zero-balance wallet provisioning creates no money.
+- For rollback, revert individual integration commits in reverse order; migration/production rollback needs ledger export and reconciliation first.
