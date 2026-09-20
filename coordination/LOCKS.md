@@ -31,3 +31,6 @@ None. Production remains unchanged.
 
 ### Read-only network and reconciliation checkpoint
 - Latest feature SHA `3271fe94958b79901bf7f3ae33f7a0e067497aef`. CHR readback is GET-only; no router mutation occurred. Wallet funding and admin settlement remain release-gated design work.
+
+### Admin settlement release condition
+- Feature SHA `b2655b92f6712d88ad88cc84450116e655d07773`: fresh installs only; suspended internal owner is not a funding source. Existing deployments require reviewed mapping and migration before enabling admin settlement.

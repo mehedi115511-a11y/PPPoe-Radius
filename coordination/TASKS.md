@@ -47,3 +47,8 @@ Status flow: TODO → IN_PROGRESS → WAITING_DEPENDENCY/BLOCKED → READY_FOR_R
 - Feature HEAD `3271fe94958b79901bf7f3ae33f7a0e067497aef`: read-only CHR interface-scoped peer and handshake reporting, receipt-to-ledger reconciliation with tenant-scoped access, and same-wallet settlement denial regression evidence.
 - Latest isolated recharge integration: balanced receipt, extra-entry mismatch and cross-tenant denial, in addition to replay, concurrency, rollback and immutability. Full Vitest 88/88, build exit 0. Portable ZIP extracted and fresh installer validated earlier at `a3c1cdbf41f51066f18d2c5e90198854902f791c`; subsequent archives rebuilt from latest commits.
 - CHR REST credentials absent in integration and production .env paths; live handshake is untested. Funding policy and separate admin settlement remain to implement. Production unchanged.
+
+## 2026-09-20 admin settlement continuation
+- Feature SHA `b2655b92f6712d88ad88cc84450116e655d07773`: fresh installs create separate zero-balance admin settlement account behind a suspended internal identity and write its ID to fresh .env. Admin recharge uses that owner; reseller recharge keeps global admin settlement owner.
+- Isolated PostgreSQL `ADMIN_SETTLEMENT_PASS wallets=2 initial=0 rerun=1 recharge=50000 balanced=1`; test-only funds were injected only in the isolated database. Latest extracted ZIP `PORTABLE_ADMIN_PASS migrations=9 clients=0 packages=0 wallets=2 internal_suspended=1` and build exit 0. Full Vitest 88/88 and build exit 0 before packaging.
+- Existing installations are not backfilled. External payment-backed wallet funding remains to design and implement; no production funds or data changed.
