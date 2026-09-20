@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const sql = readFileSync(new URL('../migrations/015_router_nas_catalog.sql', import.meta.url), 'utf8');
+const sql = readFileSync('server/migrations/015_router_nas_catalog.sql', 'utf8');
 
 describe('Router/NAS migration safety contract (static, not a database execution)', () => {
   it('scopes router records to an existing tenant owner', () => {
