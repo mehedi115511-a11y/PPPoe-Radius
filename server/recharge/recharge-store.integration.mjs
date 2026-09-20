@@ -23,6 +23,10 @@ try {
           ('Legacy','rch-legacy','3','500 plan','R','2024-01-01',500,'Offline','Reseller',null,$1)
     returning id`, [pkg.rows[0].id]);
   const [a,b,legacy] = clients.rows.map(row => Number(row.id));
+  await expectReject(postRecharge(pool,{
+    actor:{id:1,role:"Admin",status:"Active"},clientId:a,mode:"full_cycle",
+    idempotencyKey:"same-wallet-denied",settlementOwnerUserId:1,
+  }),/Settlement wallet must differ/);
   const preview=await quoteRecharge(pool,{actor,clientId:a,mode:"custom_days",selectedDays:1});
   if(preview.amountMinor!=="1667" || !preview.newExpiry) throw new Error("Quote amount or expiry failed");
   await expectReject(quoteRecharge(pool,{actor,clientId:legacy,mode:"full_cycle"}),/not found/);
