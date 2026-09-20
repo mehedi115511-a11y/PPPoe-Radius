@@ -12,6 +12,7 @@ import { tenantScope, resolveTenantPackage } from "./security/tenant-queries.js"
 import { postRecharge, quoteRecharge, reconcileRechargeReceipt } from "./recharge/recharge-store.js";
 import {createFundingRequest,reviewFundingRequest} from "./wallet/funding-evidence.js";
 import {listIpPools,saveIpPool,deleteIpPool} from "./ip-pools.js";
+import { registerRouterRoutes } from "./routers/routes.js";
 import { createChrPeerSync } from "./chr-peer-sync.js";
 import { routerOsRestAdapterFromEnv } from "./routeros-rest-adapter.js";
 import { applyPeerOperation, reconcilePeers, revokeL2tpProfile } from "./vpn-peer-service.js";
@@ -50,6 +51,8 @@ const authenticate = async (req, res, next) => {
     return res.status(401).json({ error: "Invalid or expired session" });
   }
 };
+registerRouterRoutes(app, pool, authenticate);
+
 const requireAdmin = (req, res, next) =>
   req.auth?.role === "Admin" && !req.auth?.impersonatedBy
     ? next()
