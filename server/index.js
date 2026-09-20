@@ -10,6 +10,7 @@ import { renderRouterOsPeerScript } from "./vpn-config.js";
 import { revalidateSession } from "./security/session-revalidation.js";
 import { tenantScope, resolveTenantPackage } from "./security/tenant-queries.js";
 import { postRecharge, quoteRecharge, reconcileRechargeReceipt } from "./recharge/recharge-store.js";
+import {createFundingRequest,reviewFundingRequest} from "./wallet/funding-evidence.js";
 import { createChrPeerSync } from "./chr-peer-sync.js";
 import { routerOsRestAdapterFromEnv } from "./routeros-rest-adapter.js";
 import { applyPeerOperation, reconcilePeers, revokeL2tpProfile } from "./vpn-peer-service.js";
@@ -635,6 +636,45 @@ app.delete("/api/packages/:id", authenticate, async (req, res, next) => {
   }
 });
 
+app.get("/api/wallet/funding-requests", authenticate, async (req,res,next) => {
+  try{
+    const {rows}=await pool.query(`select f.id,f.provider,f.external_reference "externalReference",
+      f.amount_minor::text "amountMinor",f.created_at "createdAt",
+      r.decision,r.note,r.created_at "reviewedAt"
+      from wallet_funding_requests f left join wallet_funding_reviews r on r.request_id=f.id
+      where f.tenant_owner_user_id=$1 order by f.created_at desc,f.id desc limit 200`,[req.auth.id]);
+    res.set("Cache-Control","no-store").json({data:rows,count:rows.length});
+  }catch(error){next(error)}
+});
+app.post("/api/wallet/funding-requests", authenticate, async (req,res,next) => {
+  try{
+    const key=req.get("Idempotency-Key");
+    if(!key)return res.status(422).json({error:"Idempotency-Key header required"});
+    const data=await createFundingRequest(pool,{
+      actor:req.auth,provider:req.body?.provider,externalReference:req.body?.externalReference,
+      amount:req.body?.amount,idempotencyKey:key,
+    });
+    res.status(data.replay?200:201).json({data});
+  }catch(error){next(error)}
+});
+app.get("/api/admin/wallet/funding-requests", authenticate, requireAdmin, async (_req,res,next) => {
+  try{
+    const {rows}=await pool.query(`select f.id,f.tenant_owner_user_id "tenantOwnerUserId",
+      f.provider,f.external_reference "externalReference",f.amount_minor::text "amountMinor",
+      f.created_at "createdAt",r.decision,r.note,r.created_at "reviewedAt"
+      from wallet_funding_requests f left join wallet_funding_reviews r on r.request_id=f.id
+      order by f.created_at desc,f.id desc limit 200`);
+    res.set("Cache-Control","no-store").json({data:rows,count:rows.length});
+  }catch(error){next(error)}
+});
+app.post("/api/admin/wallet/funding-requests/:id/review", authenticate, requireAdmin, async (req,res,next) => {
+  try{
+    const data=await reviewFundingRequest(pool,{
+      actor:req.auth,requestId:req.params.id,decision:req.body?.decision,note:req.body?.note,
+    });
+    res.status(data.replay?200:201).json({data});
+  }catch(error){next(error)}
+});
 app.get("/api/wallet", authenticate, async (req, res, next) => {
   try {
     const { rows } = await pool.query(

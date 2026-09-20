@@ -123,3 +123,11 @@ test("authenticated reseller session selects the reseller workspace", async () =
   await userEvent.click(screen.getByRole("button", { name: "Resellers" }));
   expect(screen.getByRole("heading", { name: "Add Sub-reseller" })).toBeInTheDocument();
 });
+
+test("wallet page labels payment evidence as non-crediting", async () => {
+  render(<App />);
+  await userEvent.click(screen.getByRole("button", { name: "Wallet & Ledger" }));
+  expect(screen.getByRole("heading", { name: "Submit payment evidence" })).toBeInTheDocument();
+  expect(screen.getByText("Submission and review do not credit your wallet.")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Review payment evidence" })).toBeInTheDocument();
+});

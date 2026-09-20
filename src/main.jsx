@@ -896,9 +896,14 @@ function Packages() {
     </div>
   );
 }
-function WalletWorkspace() {
+function WalletWorkspace({role}) {
   const [wallet,setWallet]=useState(null),[entries,setEntries]=useState([]),
-    [receipts,setReceipts]=useState([]),[error,setError]=useState("");
+    [receipts,setReceipts]=useState([]),[error,setError]=useState(""),
+    [funding,setFunding]=useState([]),[provider,setProvider]=useState("bkash"),
+    [reference,setReference]=useState(""),[amount,setAmount]=useState(""),
+    [requestKey,setRequestKey]=useState(null),[reviewId,setReviewId]=useState(""),
+    [decision,setDecision]=useState("evidence_ok"),[reviewNote,setReviewNote]=useState(""),
+    [busy,setBusy]=useState(false);
   useEffect(()=>{
     let active=true;
     Promise.all([apiGet("/api/wallet"),apiGet("/api/wallet/ledger"),apiGet("/api/recharges")])
@@ -908,11 +913,60 @@ function WalletWorkspace() {
       .catch(e=>active&&setError(e.message));
     return()=>{active=false};
   },[]);
+  const fundingPath=role==="Admin"?"/api/admin/wallet/funding-requests":"/api/wallet/funding-requests";
+  useEffect(()=>{
+    let active=true;
+    apiGet(fundingPath).then(result=>active&&setFunding(result.data))
+      .catch(e=>active&&setError(e.message));
+    return()=>{active=false};
+  },[fundingPath]);
+  const loadFunding=()=>apiGet(fundingPath).then(result=>setFunding(result.data));
+  const submitEvidence=async e=>{
+    e.preventDefault();setBusy(true);setError("");
+    const key=requestKey||crypto.randomUUID();setRequestKey(key);
+    try{
+      await apiSend("/api/wallet/funding-requests","POST",
+        {provider,externalReference:reference,amount},{"Idempotency-Key":key});
+      setReference("");setAmount("");setRequestKey(null);await loadFunding();
+    }catch(e){setError(e.message)}
+    finally{setBusy(false)}
+  };
+  const submitReview=async e=>{
+    e.preventDefault();setBusy(true);setError("");
+    try{
+      await apiSend(`/api/admin/wallet/funding-requests/${reviewId}/review`,"POST",
+        {decision,note:reviewNote});
+      setReviewNote("");setReviewId("");await loadFunding();
+    }catch(e){setError(e.message)}
+    finally{setBusy(false)}
+  };
   const money=value=>`৳${(Number(value)/100).toFixed(2)}`;
   return <div className="content">
     <section className="page-title"><div><h1>Wallet & Ledger</h1><p>Current balance and recorded transactions</p></div></section>
     {error&&<div className="data-warning">{error}</div>}
     <section className="panel"><h2>Available balance</h2><strong>{wallet?money(wallet.balanceMinor):"—"}</strong></section>
+    <section className="panel vpn-create"><h2>Submit payment evidence</h2><p>Submission and review do not credit your wallet.</p>
+      <form className="vpn-form" onSubmit={submitEvidence}>
+        <label>Payment provider<select value={provider} onChange={e=>{setProvider(e.target.value);setRequestKey(null)}}>
+          <option value="bkash">bKash</option><option value="nagad">Nagad</option><option value="rocket">Rocket</option><option value="bank">Bank</option>
+        </select></label>
+        <label>Payment reference<input value={reference} onChange={e=>{setReference(e.target.value);setRequestKey(null)}} minLength="6" maxLength="120" required/></label>
+        <label>Amount BDT<input type="text" inputMode="decimal" pattern="(0|[1-9][0-9]*)(\.[0-9]{1,2})?" value={amount} onChange={e=>{setAmount(e.target.value);setRequestKey(null)}} required/></label>
+        <button disabled={busy}>{busy?"Submitting...":"Submit evidence"}</button>
+      </form>
+    </section>
+    {role==="Admin"&&<section className="panel vpn-create"><h2>Review payment evidence</h2><p>Review records a decision only. It does not fund a wallet.</p>
+      <form className="vpn-form" onSubmit={submitReview}>
+        <label>Request<select value={reviewId} onChange={e=>setReviewId(e.target.value)} required><option value="">Select pending request</option>
+          {funding.filter(item=>!item.decision).map(item=><option value={item.id} key={item.id}>{item.id}: {item.provider} {item.externalReference}</option>)}
+        </select></label>
+        <label>Decision<select value={decision} onChange={e=>setDecision(e.target.value)}><option value="evidence_ok">Evidence checked</option><option value="rejected">Rejected</option></select></label>
+        <label>Review note<input value={reviewNote} onChange={e=>setReviewNote(e.target.value)} minLength="4" maxLength="500" required/></label>
+        <button disabled={busy}>Record review</button>
+      </form>
+    </section>}
+    <section className="panel"><h2>Payment evidence history</h2><div className="table-wrap"><table><thead><tr><th>Reference</th><th>Provider</th><th>Amount</th><th>Review</th></tr></thead>
+      <tbody>{funding.map(item=><tr key={item.id}><td>{item.externalReference}</td><td>{item.provider}</td><td>{money(item.amountMinor)}</td><td>{item.decision||"Pending"}</td></tr>)}</tbody></table></div></section>
     <section className="panel"><h2>Ledger history</h2><div className="table-wrap"><table><thead><tr><th>Date</th><th>Operation</th><th>Direction</th><th>Amount</th></tr></thead>
       <tbody>{entries.map((item,index)=><tr key={`${item.id}-${index}`}><td>{new Date(item.createdAt).toLocaleString()}</td><td>{item.operation}</td><td>{item.direction}</td><td>{money(item.amountMinor)}</td></tr>)}</tbody></table></div></section>
     <section className="panel"><h2>Recharge receipts</h2><div className="table-wrap"><table><thead><tr><th>Reference</th><th>Mode</th><th>Amount</th><th>Expiry</th></tr></thead>
@@ -1122,7 +1176,7 @@ export function App() {
     ) : active === "Resellers" ? (
       <ResellersWorkspace role={role} />
     ) : active === "Wallet & Ledger" ? (
-      <WalletWorkspace />
+      <WalletWorkspace role={role} />
     ) : active === "Billing" ? (
       <BillingWorkspace />
     ) : (
