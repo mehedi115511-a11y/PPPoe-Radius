@@ -37,10 +37,20 @@ try{
  await status(api("/api/wallet/funding-requests","POST",impersonated,{...body,externalReference:"FUNDHTTP002"},"impersonated-one"),403,"impersonated write");
  const review=(await status(api("/api/admin/wallet/funding-requests/"+first.id+"/review","POST",admin,{decision:"evidence_ok",note:"Evidence examined"}),201,"admin review")).data;
  if(review.decision!=="evidence_ok")throw new Error("review");
+ const parallelBody={...body,externalReference:"FUNDHTTP004"};
+ const concurrent=await Promise.all([
+   api("/api/wallet/funding-requests","POST",a,parallelBody,"parallel-one"),
+   api("/api/wallet/funding-requests","POST",a,parallelBody,"parallel-one")
+ ]);
+ if(concurrent.map(r=>r.status).sort().join(",")!=="200,201")throw new Error("Concurrent retry status "+concurrent.map(r=>r.status));
+ const concurrentRows=await Promise.all(concurrent.map(r=>r.json()));
+ if(concurrentRows[0].data.id!==concurrentRows[1].data.id)throw new Error("Concurrent retry created two records");
+ const count=await pool.query("select count(*)::int n from wallet_funding_requests where tenant_owner_user_id=$1 and external_reference=$2",[ids["funding-http-a"],"FUNDHTTP004"]);
+ if(count.rows[0].n!==1)throw new Error("Concurrent retry duplicate rows");
  await pool.query("update app_users set status='Suspended' where id=$1",[ids["funding-http-a"]]);
  await status(api("/api/wallet/funding-requests","POST",a,{...body,externalReference:"FUNDHTTP003"},"suspended-one"),401,"suspended token");
  const balances=await pool.query("select coalesce(sum(balance_minor),0)::text total from wallet_accounts");
  const entries=await pool.query("select count(*)::int n from wallet_ledger_entries");
  if(balances.rows[0].total!=="0"||entries.rows[0].n!==0)throw new Error("wallet changed");
- console.log("FUNDING_HTTP_PASS create=201 replay=200 changed=409 invalid=422 duplicate=409 tenant=isolated admin=guarded impersonated=403 suspended=401 wallet=0 ledger=0");
-}finally{if(server){server.kill("SIGTERM");await new Promise(ok=>server.once("exit",ok))}await pool.end()}
+ console.log("FUNDING_HTTP_PASS create=201 replay=200 changed=409 invalid=422 duplicate=409 concurrent_replay=1 tenant=isolated admin=guarded impersonated=403 suspended=401 wallet=0 ledger=0");
+}finally{if(server&&server.exitCode===null){server.kill("SIGTERM");await new Promise(ok=>server.once("exit",ok))}await pool.end()}

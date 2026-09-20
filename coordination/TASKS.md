@@ -52,3 +52,10 @@ Status flow: TODO → IN_PROGRESS → WAITING_DEPENDENCY/BLOCKED → READY_FOR_R
 - Feature SHA `b2655b92f6712d88ad88cc84450116e655d07773`: fresh installs create separate zero-balance admin settlement account behind a suspended internal identity and write its ID to fresh .env. Admin recharge uses that owner; reseller recharge keeps global admin settlement owner.
 - Isolated PostgreSQL `ADMIN_SETTLEMENT_PASS wallets=2 initial=0 rerun=1 recharge=50000 balanced=1`; test-only funds were injected only in the isolated database. Latest extracted ZIP `PORTABLE_ADMIN_PASS migrations=9 clients=0 packages=0 wallets=2 internal_suspended=1` and build exit 0. Full Vitest 88/88 and build exit 0 before packaging.
 - Existing installations are not backfilled. External payment-backed wallet funding remains to design and implement; no production funds or data changed.
+
+
+## 2026-09-20 funding evidence HTTP checkpoint
+- Prior integration HEAD `4f06b7fdbba06dd72a7027c3707d543cbee691ff`: immutable tenant-scoped payment evidence and admin review. Review does not credit a wallet; verified provider settlement remains pending.
+- Temporary isolated PostgreSQL database with ten migrations: authenticated HTTP create 201, exact replay 200, changed request 409, malformed amount 422, cross-tenant reference claim 409, tenant listing isolation, reseller admin denial 403, impersonated financial write denial 403 and suspended token denial 401. Wallet balance and ledger entries remained zero.
+- Concurrent identical HTTP submissions returned exactly one 201 and one 200 referencing the same request; persisted count was one. No production migration, funding or router mutation.
+- Portable ZIP/TAR generated from committed source. Next safe work: externally verifiable funding settlement integration or credential-independent network and installer tests; live CHR requires configured access and production deployment requires separate approval.
