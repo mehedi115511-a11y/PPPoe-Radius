@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS app_router_secrets (
     REFERENCES app_routers(id, owner_user_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS app_router_secrets_owner_idx ON app_router_secrets(owner_user_id, router_id);
--- The application role needs catalog reads/writes, not hard deletion or schema ownership.
+-- Router catalog cannot be hard-deleted by the app; credential revocation requires DELETE on its own table.
 GRANT SELECT, INSERT, UPDATE ON app_routers TO pppoe_app;
 GRANT USAGE ON SEQUENCE app_routers_id_seq TO pppoe_app;
-GRANT SELECT, INSERT, UPDATE ON app_router_secrets TO pppoe_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app_router_secrets TO pppoe_app;
 COMMIT;
