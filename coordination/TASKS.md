@@ -42,3 +42,8 @@ Status flow: TODO → IN_PROGRESS → WAITING_DEPENDENCY/BLOCKED → READY_FOR_R
 - Bootstrap and admin reseller creation provision zero-balance tenant/settlement wallets. Reseller-only child creation and tenant-scoped listing are implemented; the Resellers UI exposes both forms by role.
 - Isolated PostgreSQL: `INSTALL_WALLET_PASS`, `BOOTSTRAP_WALLETS_PASS`, `RESELLER_API_PASS`, `INSTALL_SETTLEMENT_PASS`, `SUBRESELLER_API_PASS`. Latest Vitest: 86/86 in 20 files; build exit 0. Portable archives rebuilt from committed source.
 - Next: controlled funding/reconciliation and end-to-end configuration of recharge; live CHR credentials and production deployment remain separately approval-dependent. No production data or services changed.
+
+## 2026-09-20 later checkpoint
+- Feature HEAD `3271fe94958b79901bf7f3ae33f7a0e067497aef`: read-only CHR interface-scoped peer and handshake reporting, receipt-to-ledger reconciliation with tenant-scoped access, and same-wallet settlement denial regression evidence.
+- Latest isolated recharge integration: balanced receipt, extra-entry mismatch and cross-tenant denial, in addition to replay, concurrency, rollback and immutability. Full Vitest 88/88, build exit 0. Portable ZIP extracted and fresh installer validated earlier at `a3c1cdbf41f51066f18d2c5e90198854902f791c`; subsequent archives rebuilt from latest commits.
+- CHR REST credentials absent in integration and production .env paths; live handshake is untested. Funding policy and separate admin settlement remain to implement. Production unchanged.

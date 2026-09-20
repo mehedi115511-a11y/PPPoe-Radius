@@ -28,3 +28,6 @@ None. Production remains unchanged.
 - Wallet and reseller work continues in `/opt/pppoe-radius-chat-c`; last verified clean remote-matched feature SHA `dbc0e83b51a918ebae25742bd6b9a434f8d0a8a0`.
 - Settlement funding and production backfill/deployment remain gated by exact reconciliation and deployment lock. Zero-balance wallet provisioning creates no money.
 - For rollback, revert individual integration commits in reverse order; migration/production rollback needs ledger export and reconciliation first.
+
+### Read-only network and reconciliation checkpoint
+- Latest feature SHA `3271fe94958b79901bf7f3ae33f7a0e067497aef`. CHR readback is GET-only; no router mutation occurred. Wallet funding and admin settlement remain release-gated design work.
