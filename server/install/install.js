@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import pg from "pg";
 import { databaseUrl, quoteIdentifier, renderEnv, validateInstallConfig } from "./config.js";
@@ -74,6 +75,24 @@ export async function installApplication(input, rootDir = process.cwd()) {
         "insert into wallet_accounts(tenant_owner_user_id,owner_user_id) values($1,$1) on conflict(tenant_owner_user_id,owner_user_id,currency) do nothing",
         [admin.rows[0].id],
       );
+      if (!existingEnv || existingEnv.includes("BILLING_ADMIN_SETTLEMENT_OWNER_USER_ID=")) {
+        const internalUsername = `__settlement_${admin.rows[0].id}__`;
+        const internalHash = await bcrypt.hash(crypto.randomBytes(48).toString("base64url"), 12);
+        await appDb.query(
+          "insert into app_users(name,username,password_hash,role,status,parent_user_id) values('Internal Settlement',$1,$2,'Admin','Suspended',$3) on conflict(username) do nothing",
+          [internalUsername,internalHash,admin.rows[0].id],
+        );
+        const internal = await appDb.query(
+          "select id from app_users where username=$1 and role='Admin' and status='Suspended' and parent_user_id=$2",
+          [internalUsername,admin.rows[0].id],
+        );
+        if (!internal.rows[0]) throw new Error("Internal settlement identity conflicts with an existing user");
+        await appDb.query(
+          "insert into wallet_accounts(tenant_owner_user_id,owner_user_id) values($1,$2) on conflict(tenant_owner_user_id,owner_user_id,currency) do nothing",
+          [admin.rows[0].id,internal.rows[0].id],
+        );
+        config.adminSettlementOwnerUserId = internal.rows[0].id;
+      }
       await appDb.query("COMMIT");
     } catch (error) {
       await appDb.query("ROLLBACK");

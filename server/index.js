@@ -704,7 +704,8 @@ app.post("/api/clients/:id/recharge", authenticate, async (req, res, next) => {
       actor: req.auth, clientId: Number(req.params.id), mode: req.body?.mode,
       selectedDays: req.body?.selectedDays, rechargeDate: req.body?.rechargeDate,
       expectedAmountMinor: req.body?.expectedAmountMinor,
-      idempotencyKey, settlementOwnerUserId: Number(process.env.BILLING_WALLET_OWNER_USER_ID),
+      idempotencyKey, settlementOwnerUserId: Number(req.auth.role === "Admin"
+        ? process.env.BILLING_ADMIN_SETTLEMENT_OWNER_USER_ID : process.env.BILLING_WALLET_OWNER_USER_ID),
     });
     res.status(data.replay ? 200 : 201).json({ data });
   } catch (error) { next(error); }
