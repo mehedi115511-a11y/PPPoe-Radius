@@ -14,7 +14,7 @@ export async function getRouterDependencies(db, actor, routerId) {
     FROM app_routers r WHERE r.id=$1 AND r.owner_user_id=$2 AND r.deleted_at IS NULL
   `, [id, owner]);
   if (!rows[0]) throw Object.assign(new Error('Router not found'), { status:404 });
-  const {routerId,status,clients,packages,unmappedClients,unmappedPackages,credentials} = rows[0];
-  return {routerId, status, clients, packages, unmappedClients, unmappedPackages, credentials,
+  const {status,clients,packages,unmappedClients,unmappedPackages,credentials} = rows[0];
+  return {routerId:id, status, clients, packages, unmappedClients, unmappedPackages, credentials,
     removalAvailable:false, reason:'Router removal remains disabled until legacy identities and concurrent writes are reconciled'};
 }
