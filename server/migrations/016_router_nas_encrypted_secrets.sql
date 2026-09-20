@@ -15,5 +15,8 @@ CREATE TABLE IF NOT EXISTS app_router_secrets (
     REFERENCES app_routers(id, owner_user_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS app_router_secrets_owner_idx ON app_router_secrets(owner_user_id, router_id);
--- Grant only to the scoped application role after privileges and key custody are reviewed.
+-- The application role needs catalog reads/writes, not hard deletion or schema ownership.
+GRANT SELECT, INSERT, UPDATE ON app_routers TO pppoe_app;
+GRANT USAGE ON SEQUENCE app_routers_id_seq TO pppoe_app;
+GRANT SELECT, INSERT, UPDATE ON app_router_secrets TO pppoe_app;
 COMMIT;
