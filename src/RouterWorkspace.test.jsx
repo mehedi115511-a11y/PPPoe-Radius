@@ -1,9 +1,10 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import RouterWorkspace from './RouterWorkspace.jsx';
 
 beforeEach(() => { localStorage.clear(); localStorage.setItem('pppoe_token', 'test-session'); vi.restoreAllMocks(); });
+afterEach(() => cleanup());
 const reply = (data, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => data });
 
 describe('Router/NAS workspace', () => {
