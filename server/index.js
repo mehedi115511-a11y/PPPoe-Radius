@@ -720,6 +720,13 @@ app.get("/api/admin/vpn/readiness", authenticate, requireAdmin, (_req,res) => {
   res.set("Cache-Control","no-store").json({ data:vpnReadiness() });
 });
 
+app.get("/api/admin/vpn/chr-readback", authenticate, requireAdmin, async (_req,res,next) => {
+  try {
+    const peers=await configuredChrSync().list();
+    res.set("Cache-Control","no-store").json({data:peers,count:peers.length});
+  }catch(error){next(error)}
+});
+
 // Registry remains Pending until an independently verified CHR sync is available.
 app.get("/api/admin/vpn/peers", authenticate, requireAdmin, async (_req, res, next) => {
   try {

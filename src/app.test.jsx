@@ -88,6 +88,7 @@ test("opens dedicated VPN workspace with RouterOS 6 and 7 selection", async () =
   expect(selector).toHaveValue("7");
   expect(within(selector).getByRole("option", { name: /RouterOS 6/ })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Create VPN & Script" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Check CHR" })).toBeInTheDocument();
 });
 
 test("opens billing with full cycle and custom day modes", async () => {

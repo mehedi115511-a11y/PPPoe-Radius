@@ -50,11 +50,14 @@ export function createRouterOsRestAdapter(options) {
     async listPeers() {
       const rows = await request(path);
       if (!Array.isArray(rows)) throw new Error("RouterOS peer response malformed");
-      return rows.map((row) => ({
+      return rows.filter((row) => row.interface === options.interfaceName).map((row) => ({
         id: text(row[".id"], "peer id"),
         publicKey: text(row["public-key"], "public key"),
         allowedAddress: text(row["allowed-address"], "allowed address"),
         disabled: truthy(row.disabled),
+        lastHandshake: typeof row["last-handshake"] === "string" ? row["last-handshake"] : null,
+        rxBytes: typeof row.rx === "string" && /^\d+$/.test(row.rx) ? row.rx : null,
+        txBytes: typeof row.tx === "string" && /^\d+$/.test(row.tx) ? row.tx : null,
       }));
     },
     async addPeer(peer) {

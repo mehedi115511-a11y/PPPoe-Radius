@@ -984,7 +984,7 @@ function BillingWorkspace() {
 function VpnManagement() {
   const [items,setItems]=useState([]),[name,setName]=useState(""),[routerOsMajor,setRouterOsMajor]=useState("7"),
     [script,setScript]=useState(""),[error,setError]=useState(""),[loading,setLoading]=useState(false),
-    [readiness,setReadiness]=useState(null);
+    [readiness,setReadiness]=useState(null),[readback,setReadback]=useState(null);
   const selectedReadiness=readiness?.[routerOsMajor==="6"?"routerOs6":"routerOs7"];
   const load=()=>apiGet("/api/admin/vpn/peers").then(r=>setItems(r.data)).catch(e=>setError(e.message));
   useEffect(()=>{ load(); apiGet("/api/admin/vpn/readiness").then(r=>setReadiness(r.data)).catch(()=>{}); },[]);
@@ -999,6 +999,9 @@ function VpnManagement() {
     try { await apiSend(`/api/admin/vpn/peers/${id}/${operation}`,"POST"); await load(); }
     catch(e) { setError(e.message); }
   };
+  const checkChr=()=>apiGet("/api/admin/vpn/chr-readback")
+    .then(response=>{setReadback(response.data);setError("")})
+    .catch(e=>setError(e.message));
   const download=()=>{
     const url=URL.createObjectURL(new Blob([script],{type:"text/plain"}));
     const link=document.createElement("a"); link.href=url; link.download="nextgan-vpn.rsc"; link.click(); URL.revokeObjectURL(url);
@@ -1025,7 +1028,8 @@ function VpnManagement() {
       <pre>{script}</pre>
     </section>}
     <section className="panel"><div className="panel-title"><div><h2>VPN Connections</h2><p>RouterOS version, protocol and synchronization state</p></div>
-      <button disabled={readiness?.chrSync?.ready===false} onClick={()=>apiSend("/api/admin/vpn/peers/reconcile","POST").then(load).catch(e=>setError(e.message))}>Reconcile</button></div>
+      <div><button disabled={readiness?.chrSync?.ready===false} onClick={checkChr}>Check CHR</button><button disabled={readiness?.chrSync?.ready===false} onClick={()=>apiSend("/api/admin/vpn/peers/reconcile","POST").then(load).catch(e=>setError(e.message))}>Reconcile</button></div></div>
+      {readback&&<p role="status">CHR readback: {readback.length} WireGuard peers; {readback.filter(peer=>peer.lastHandshake).length} report a handshake.</p>}
       <div className="table-wrap"><table><thead><tr><th>Name</th><th>RouterOS</th><th>Protocol</th><th>VPN IP</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody>{items.map(peer=><tr key={peer.id}><td>{peer.name}</td><td>OS {peer.routerOsMajor}</td><td>{peer.protocol}</td><td>{peer.tunnelIp}</td><td>{peer.status}</td>
        <td>{peer.protocol==="wireguard"&&<><button disabled={readiness?.chrSync?.ready===false} onClick={()=>action(peer.id,"sync")}>Connect</button><button onClick={()=>action(peer.id,"disable")}>Disable</button></>}<button onClick={()=>action(peer.id,"revoke")}>Revoke</button></td>
@@ -1052,14 +1056,14 @@ function ResellersWorkspace({ role }) {
   return <div className="content">
     <section className="page-title"><div><h1>Resellers</h1><p>Create accounts with empty tenant wallets.</p></div></section>
     {error&&<div className="data-warning" role="alert">{error}</div>}
-    <section className="panel vpn-create"><h2>Add {role==="Admin"?"Reseller":"Sub-reseller"}</h2>
+    {role!=="Sub-reseller"&&<section className="panel vpn-create"><h2>Add {role==="Admin"?"Reseller":"Sub-reseller"}</h2>
       <form className="vpn-form" onSubmit={submit}>
         <label>Display name<input value={name} onChange={e=>setName(e.target.value)} maxLength="120" required/></label>
         <label>Username<input value={username} onChange={e=>setUsername(e.target.value)} pattern="[A-Za-z_][A-Za-z0-9_.-]{2,62}" required/></label>
         <label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} minLength="12" maxLength="256" autoComplete="new-password" required/></label>
-        <button className="quick" disabled={busy}>{busy?"Creating&":role==="Admin"?"Create Reseller":"Create Sub-reseller"}</button>
+        <button className="quick" disabled={busy}>{busy?"Creating...":role==="Admin"?"Create Reseller":"Create Sub-reseller"}</button>
       </form>
-    </section>
+    </section>}
     <section className="panel"><h2>Accounts</h2>
       <div className="table-wrap"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th></tr></thead>
         <tbody>{rows.map(row=><tr key={row.id}><td>{row.name}</td><td>{row.username}</td><td>{row.role}</td><td>{row.status}</td></tr>)}</tbody></table></div>
