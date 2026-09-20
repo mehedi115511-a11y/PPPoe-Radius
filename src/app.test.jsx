@@ -99,3 +99,11 @@ test("opens billing with full cycle and custom day modes", async () => {
   await userEvent.selectOptions(mode, "custom_days");
   expect(screen.getByLabelText("Selected days")).toHaveAttribute("min", "1");
 });
+
+test("opens reseller account creation with password validation", async () => {
+  render(<App />);
+  await userEvent.click(screen.getByRole("button", { name: "Resellers" }));
+  expect(screen.getByRole("heading", { name: "Add Reseller" })).toBeInTheDocument();
+  expect(within(screen.getByRole("heading", { name: "Add Reseller" }).closest("section")).getByLabelText("Password")).toHaveAttribute("minLength", "12");
+  expect(screen.getByRole("button", { name: "Create Reseller" })).toBeInTheDocument();
+});

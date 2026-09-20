@@ -1034,6 +1034,38 @@ function VpnManagement() {
   </div>;
 }
 
+function ResellersWorkspace() {
+  const [rows,setRows]=useState([]),[name,setName]=useState(""),[username,setUsername]=useState(""),
+    [password,setPassword]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState("");
+  const load=()=>apiGet("/api/admin/resellers").then(response=>setRows(response.data)).catch(e=>setError(e.message));
+  useEffect(()=>{load()},[]);
+  const submit=async e=>{
+    e.preventDefault();setBusy(true);setError("");
+    try{
+      await apiSend("/api/admin/resellers","POST",{name,username,password});
+      setName("");setUsername("");setPassword("");
+      await load();
+    }catch(e){setError(e.message)}
+    finally{setBusy(false)}
+  };
+  return <div className="content">
+    <section className="page-title"><div><h1>Resellers</h1><p>Create reseller accounts with empty tenant wallets.</p></div></section>
+    {error&&<div className="data-warning" role="alert">{error}</div>}
+    <section className="panel vpn-create"><h2>Add Reseller</h2>
+      <form className="vpn-form" onSubmit={submit}>
+        <label>Display name<input value={name} onChange={e=>setName(e.target.value)} maxLength="120" required/></label>
+        <label>Username<input value={username} onChange={e=>setUsername(e.target.value)} pattern="[A-Za-z_][A-Za-z0-9_.-]{2,62}" required/></label>
+        <label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} minLength="12" maxLength="256" autoComplete="new-password" required/></label>
+        <button className="quick" disabled={busy}>{busy?"Creating&":"Create Reseller"}</button>
+      </form>
+    </section>
+    <section className="panel"><h2>Accounts</h2>
+      <div className="table-wrap"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th></tr></thead>
+        <tbody>{rows.map(row=><tr key={row.id}><td>{row.name}</td><td>{row.username}</td><td>{row.role}</td><td>{row.status}</td></tr>)}</tbody></table></div>
+    </section>
+  </div>;
+}
+
 function Simple({ name }) {
   return (
     <div className="content">
@@ -1069,6 +1101,8 @@ export function App() {
       <Packages />
     ) : active === "VPN" ? (
       <VpnManagement />
+    ) : active === "Resellers" ? (
+      <ResellersWorkspace />
     ) : active === "Wallet & Ledger" ? (
       <WalletWorkspace />
     ) : active === "Billing" ? (
