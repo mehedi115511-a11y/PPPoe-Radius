@@ -1,4 +1,5 @@
 import { listRouters, createRouter, updateRouter, deleteRouter } from './catalog.js';
+import { saveRouterSecret } from './secret-store.js';
 
 /** Mount under /api; authentication must run before every route. */
 export function registerRouterRoutes(app, db, authenticate) {
@@ -14,5 +15,12 @@ export function registerRouterRoutes(app, db, authenticate) {
   app.get('/api/routers', authenticate, execute((req) => listRouters(db, req.auth)));
   app.post('/api/routers', authenticate, execute((req) => createRouter(db, req.auth, req.body), 201));
   app.put('/api/routers/:id', authenticate, execute((req) => updateRouter(db, req.auth, req.params.id, req.body)));
+  app.put('/api/routers/:id/secrets/:purpose', authenticate, execute((req) => {
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 1 || !Object.hasOwn(body, 'secret')) {
+      throw Object.assign(new Error('Only a secret value is accepted'), { status: 422 });
+    }
+    return saveRouterSecret(db, req.auth, req.params.id, req.params.purpose, body.secret, process.env.ROUTER_SECRET_KEY_HEX);
+  }));
   app.delete('/api/routers/:id', authenticate, execute((req) => deleteRouter(db, req.auth, req.params.id), 204));
 }
