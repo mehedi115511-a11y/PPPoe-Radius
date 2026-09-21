@@ -11,7 +11,7 @@ import { revalidateSession } from "./security/session-revalidation.js";
 import { tenantScope, resolveTenantPackage } from "./security/tenant-queries.js";
 import { postRecharge, quoteRecharge, reconcileRechargeReceipt } from "./recharge/recharge-store.js";
 import {createFundingRequest,reviewFundingRequest} from "./wallet/funding-evidence.js";
-import {listIpPools,saveIpPool,deleteIpPool} from "./ip-pools.js";
+import {registerIpPoolRoutes} from "./ip-pools-routes.js";
 import { registerRouterRoutes } from "./routers/routes.js";
 import { createChrPeerSync } from "./chr-peer-sync.js";
 import { routerOsRestAdapterFromEnv } from "./routeros-rest-adapter.js";
@@ -52,6 +52,7 @@ const authenticate = async (req, res, next) => {
   }
 };
 registerRouterRoutes(app, pool, authenticate);
+registerIpPoolRoutes(app, pool, authenticate);
 
 const requireAdmin = (req, res, next) =>
   req.auth?.role === "Admin" && !req.auth?.impersonatedBy
@@ -640,22 +641,6 @@ app.delete("/api/packages/:id", authenticate, async (req, res, next) => {
   }
 });
 
-app.get("/api/ip-pools",authenticate,async(req,res,next)=>{
- try{const data=await listIpPools(pool,req.auth);res.set("Cache-Control","no-store").json({data,count:data.length})}
- catch(error){next(error)}
-});
-app.post("/api/ip-pools",authenticate,async(req,res,next)=>{
- try{res.status(201).json({data:await saveIpPool(pool,req.auth,req.body)})}
- catch(error){next(error)}
-});
-app.patch("/api/ip-pools/:id",authenticate,async(req,res,next)=>{
- try{res.json({data:await saveIpPool(pool,req.auth,req.body,req.params.id)})}
- catch(error){next(error)}
-});
-app.delete("/api/ip-pools/:id",authenticate,async(req,res,next)=>{
- try{await deleteIpPool(pool,req.auth,req.params.id);res.status(204).end()}
- catch(error){next(error)}
-});
 app.get("/api/wallet/funding-requests", authenticate, async (req,res,next) => {
   try{
     const {rows}=await pool.query(`select f.id,f.provider,f.external_reference "externalReference",

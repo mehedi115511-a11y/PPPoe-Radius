@@ -95,7 +95,7 @@ test("saving an IP pool sends the API request and displays the returned pool", a
   let created=false;
   const fetchMock=vi.spyOn(globalThis,"fetch").mockImplementation(async(path,options={})=>{
     if(path==="/api/ip-pools"&&options.method==="POST"){
-      expect(JSON.parse(options.body)).toEqual({name:"Client pool",network:"10.20.0.0/24",status:"Active"});
+      expect(JSON.parse(options.body)).toEqual({name:"Client pool",network:"10.20.0.0/24",routerId:"",status:"Active"});
       created=true;
       return {ok:true,status:201,json:async()=>({data:{id:1,name:"Client pool",network:"10.20.0.0/24",status:"Active"}})};
     }

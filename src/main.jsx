@@ -898,58 +898,25 @@ function Packages() {
   );
 }
 function IpPools() {
-  const [items,setItems]=useState([]),[loading,setLoading]=useState(true),
-    [saving,setSaving]=useState(false),[error,setError]=useState(""),
-    [editing,setEditing]=useState(null),[open,setOpen]=useState(false);
-  const load=()=>apiGet("/api/ip-pools")
-    .then(response=>{setItems(response.data);setError("")})
+  const [items,setItems]=useState([]),[routers,setRouters]=useState([]),[loading,setLoading]=useState(true),
+    [saving,setSaving]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),
+    [editing,setEditing]=useState(null),[open,setOpen]=useState(false),[imports,setImports]=useState([]);
+  const load=()=>Promise.all([apiGet("/api/ip-pools"),apiGet("/api/routers").catch(()=>({data:[]}))])
+    .then(([pools,routerList])=>{setItems(pools.data);setRouters(routerList.data);setError("")})
     .catch(e=>setError(e.message)).finally(()=>setLoading(false));
   useEffect(()=>{load()},[]);
-  const save=async event=>{
-    event.preventDefault();setSaving(true);setError("");
-    try {
-      const body=Object.fromEntries(new FormData(event.currentTarget));
-      await apiSend(editing?`/api/ip-pools/${editing.id}`:"/api/ip-pools",editing?"PATCH":"POST",body);
-      setOpen(false);setEditing(null);await load();
-    }catch(e){setError(e.message)}
-    finally{setSaving(false)}
-  };
-  const remove=async()=>{
-    if(!editing||!window.confirm(`Delete software IP pool ${editing.name}?`))return;
-    setSaving(true);
-    try{await apiSend(`/api/ip-pools/${editing.id}`,"DELETE");setOpen(false);setEditing(null);await load()}
-    catch(e){setError(e.message)}
-    finally{setSaving(false)}
-  };
+  const act=async(path,method="POST",body)=>{setSaving(true);setError("");setNotice("");try{const response=await apiSend(path,method,body);setNotice("Operation completed and verified.");await load();return response.data}catch(e){setError(e.message)}finally{setSaving(false)}};
+  const save=async event=>{event.preventDefault();const body=Object.fromEntries(new FormData(event.currentTarget));const result=await act(editing?`/api/ip-pools/${editing.id}`:"/api/ip-pools",editing?"PATCH":"POST",body);if(result){setOpen(false);setEditing(null)}};
+  const remove=async()=>{if(!editing||!window.confirm(`Delete local IP pool ${editing.name}?`))return;const result=await act(`/api/ip-pools/${editing.id}`,"DELETE");if(result!==undefined){setOpen(false);setEditing(null)}};
+  const previewImport=async routerId=>{setSaving(true);setError("");try{const result=await apiGet(`/api/routers/${routerId}/ip-pools/import`);setImports(result.data.pools||[]);setNotice(`Found ${result.data.count} RouterOS pools.`)}catch(e){setError(e.message)}finally{setSaving(false)}};
+  const importPool=async(remoteId)=>{const routerId=document.querySelector('[name="importRouter"]')?.value;if(await act(`/api/routers/${routerId}/ip-pools/import`,"POST",{remoteId}))setImports([])};
+  const assignClient=async item=>{const clientId=window.prompt(`Client ID to assign to ${item.name}`);if(clientId)await act(`/api/ip-pools/${item.id}/clients`,"POST",{clientId})};
   return <div className="content">
-    <section className="page-title"><div><h1>IP Pools</h1><p>Tenant IP ranges for planning PPPoE address allocation</p></div>
-      <button className="quick" onClick={()=>{setEditing(null);setOpen(true);setError("")}}><Plus/>Add IP Pool</button>
-    </section>
-    <section className="panel"><p>These are software pool definitions. Adding one here does not configure a MikroTik router.</p></section>
-    {error&&<div className="data-warning" role="alert">{error}</div>}
-    <section className="package-grid">
-      {loading?<div className="data-loading">Loading IP pools...</div>:items.length===0?<div className="panel">No IP pools yet.</div>:items.map(item=>
-        <article className="package-card" key={item.id}>
-          <div><span className={item.status.toLowerCase()}>{item.status}</span>
-            <button aria-label={`Edit pool ${item.name}`} onClick={()=>{setEditing(item);setOpen(true);setError("")}}>...</button></div>
-          <Network/><h2>{item.name}</h2><strong>{item.network}</strong>
-          <p>Software definition</p>
-        </article>)}
-    </section>
-    {open&&<div className="client-modal-backdrop"><form className="client-modal package-modal" onSubmit={save}>
-      <header><div><h2>{editing?"Edit IP Pool":"Add IP Pool"}</h2><p>Use a non-overlapping IPv4 network (CIDR).</p></div>
-        <button type="button" aria-label="Close IP pool form" onClick={()=>setOpen(false)}><X/></button></header>
-      {error&&<div className="auth-error" role="alert">{error}</div>}
-      <div className="client-form-grid">
-        <label>Pool Name<input name="name" defaultValue={editing?.name||""} minLength="2" maxLength="80" required/></label>
-        <label>IPv4 Network (CIDR)<input name="network" placeholder="10.20.0.0/24" defaultValue={editing?.network||""} required/></label>
-        <label>Status<select name="status" defaultValue={editing?.status||"Active"}><option>Active</option><option>Disabled</option></select></label>
-      </div>
-      <footer>{editing&&<button type="button" className="danger" disabled={saving} onClick={remove}>Delete IP Pool</button>}
-        <span/><button type="button" onClick={()=>setOpen(false)}>Cancel</button>
-        <button className="primary" disabled={saving}>{saving?"Saving...":"Save IP Pool"}</button>
-      </footer>
-    </form></div>}
+    <section className="page-title"><div><h1>IP Pools</h1><p>Tenant pools with MikroTik RouterOS 6/7 synchronization</p></div><button className="quick" onClick={()=>{setEditing(null);setOpen(true);setError("")}}><Plus/>Add IP Pool</button></section>
+    <section className="panel"><h2>Import from MikroTik</h2><p>Adding a local pool does not configure a MikroTik router until Provision / Update. Readback is non-destructive; only exact CIDR-compatible RouterOS ranges can be imported.</p><label>Router<select name="importRouter" defaultValue=""><option value="" disabled>Select router</option>{routers.map(r=><option key={r.id} value={r.id}>{r.name} (RouterOS {r.routerOsVersion})</option>)}</select></label><button disabled={saving} onClick={e=>{const id=e.currentTarget.parentElement.querySelector('select').value;if(id)previewImport(id)}}>Read Router Pools</button>{imports.map(p=><div key={p.remoteId}><strong>{p.name}</strong> {p.ranges} <button onClick={()=>importPool(p.remoteId)}>Import</button></div>)}</section>
+    {error&&<div className="data-warning" role="alert">{error}</div>}{notice&&<div className="data-success" role="status">{notice}</div>}
+    <section className="package-grid">{loading?<div className="data-loading">Loading IP pools...</div>:items.length===0?<div className="panel">No IP pools yet.</div>:items.map(item=><article className="package-card" key={item.id}><div><span className={item.status.toLowerCase()}>{item.status}</span><button aria-label={`Edit pool ${item.name}`} onClick={()=>{setEditing(item);setOpen(true);setError("")}}>...</button></div><Network/><h2>{item.name}</h2><strong>{item.network}</strong><p>{item.routerName?`${item.routerName} · RouterOS ${item.routerOsVersion} · ${item.syncStatus}`:"Local only"} · {item.clientCount||0} clients</p>{item.routerId&&<><button disabled={saving} onClick={()=>act(`/api/ip-pools/${item.id}/sync`)}>Provision / Update</button><button disabled={saving} onClick={()=>act(`/api/ip-pools/${item.id}/readback`)}>Verify Readback</button>{item.remoteName&&<button disabled={saving} onClick={()=>act(`/api/ip-pools/${item.id}/remove-router`)}>Remove from Router</button>}</>}<button disabled={saving} onClick={()=>assignClient(item)}>Assign Client</button></article>)}</section>
+    {open&&<div className="client-modal-backdrop"><form className="client-modal package-modal" onSubmit={save}><header><div><h2>{editing?"Edit IP Pool":"Add IP Pool"}</h2><p>Use a non-overlapping IPv4 network (CIDR).</p></div><button type="button" aria-label="Close IP pool form" onClick={()=>setOpen(false)}><X/></button></header>{error&&<div className="auth-error" role="alert">{error}</div>}<div className="client-form-grid"><label>Pool Name<input name="name" defaultValue={editing?.name||""} minLength="2" maxLength="80" required/></label><label>IPv4 Network (CIDR)<input name="network" placeholder="10.20.0.0/24" defaultValue={editing?.network||""} required/></label><label>Router<select name="routerId" defaultValue={editing?.routerId||""}><option value="">Local only</option>{routers.map(r=><option key={r.id} value={r.id}>{r.name} (RouterOS {r.routerOsVersion})</option>)}</select></label><label>Status<select name="status" defaultValue={editing?.status||"Active"}><option>Active</option><option>Disabled</option></select></label></div><footer>{editing&&<button type="button" className="danger" disabled={saving} onClick={remove}>Delete IP Pool</button>}<span/><button type="button" onClick={()=>setOpen(false)}>Cancel</button><button className="primary" disabled={saving}>{saving?"Saving...":"Save IP Pool"}</button></footer></form></div>}
   </div>;
 }
 function WalletWorkspace({role}) {

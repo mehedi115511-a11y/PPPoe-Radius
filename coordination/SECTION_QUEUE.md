@@ -16,7 +16,7 @@ Never modify `/opt/project-two`.
 | ID | Section | Completion boundary | Current state |
 | --- | --- | --- | --- |
 | #PPPOE-01 | Routers / NAS | Tenant-owned router catalog and frontend CRUD, safe credential handling, RouterOS connection/health verification, shared secret lifecycle, removal consequences, isolated and live checks | IMPLEMENTATION_COMPLETE_LIVE_PENDING |
-| #PPPOE-02 | IP Pools | Existing software CRUD plus MikroTik pool import/provision/readback, non-overlap, client assignment, rollback and cleanup | PARTIAL |
+| #PPPOE-02 | IP Pools | Existing software CRUD plus MikroTik pool import/provision/readback, non-overlap, client assignment, rollback and cleanup | IMPLEMENTATION_COMPLETE_LIVE_PENDING |
 | #PPPOE-03 | VPN | RouterOS 6/7 selection and script, CHR peer lifecycle/readback, real connection/handshake, revoke/recovery and UI status | PARTIAL |
 | #PPPOE-04 | Packages | Owned CRUD plus router import/profile synchronization, edit/delete propagation, referenced-package behavior | PARTIAL |
 | #PPPOE-05 | Clients | Owned CRUD, router/package/pool choice, PPP/RADIUS sync, history, failure handling and UI | PARTIAL |
