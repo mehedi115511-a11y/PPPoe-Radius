@@ -1064,33 +1064,52 @@ function BillingWorkspace() {
 }
 
 function VpnManagement() {
-  const [items,setItems]=useState([]),[name,setName]=useState(""),[routerOsMajor,setRouterOsMajor]=useState("7"),
-    [script,setScript]=useState(""),[error,setError]=useState(""),[loading,setLoading]=useState(false),
+  const [items,setItems]=useState([]),[routers,setRouters]=useState([]),[routerId,setRouterId]=useState(""),
+    [name,setName]=useState(""),[routerOsMajor,setRouterOsMajor]=useState("7"),[script,setScript]=useState(""),
+    [notice,setNotice]=useState(""),[error,setError]=useState(""),[loading,setLoading]=useState(false),
     [readiness,setReadiness]=useState(null),[readback,setReadback]=useState(null);
   const selectedReadiness=readiness?.[routerOsMajor==="6"?"routerOs6":"routerOs7"];
+  const compatibleRouters=routers.filter(router=>String(router.routerOsVersion)===routerOsMajor);
   const load=()=>apiGet("/api/admin/vpn/peers").then(r=>setItems(r.data)).catch(e=>setError(e.message));
-  useEffect(()=>{ load(); apiGet("/api/admin/vpn/readiness").then(r=>setReadiness(r.data)).catch(()=>{}); },[]);
+  useEffect(()=>{
+    load();
+    apiGet("/api/routers").then(r=>setRouters(r.data.filter(router=>router.status==="Active"))).catch(e=>setError(e.message));
+    apiGet("/api/admin/vpn/readiness").then(r=>setReadiness(r.data)).catch(()=>{});
+  },[]);
+  useEffect(()=>{
+    if(routerId&&!compatibleRouters.some(router=>String(router.id)===String(routerId))) setRouterId("");
+  },[routerOsMajor,routers]);
   const create=async(event)=>{
-    event.preventDefault(); setLoading(true); setError(""); setScript("");
+    event.preventDefault(); setLoading(true); setError(""); setNotice(""); setScript("");
+    const requestKey=crypto.randomUUID();
     try {
-      const response=await apiSend("/api/admin/vpn/peers","POST",{name,routerOsMajor:Number(routerOsMajor)});
-      setScript(response.data.script); setName(""); await load();
+      const response=await apiSend("/api/admin/vpn/peers","POST",
+        {name,routerOsMajor:Number(routerOsMajor),routerId:Number(routerId)},
+        {"Idempotency-Key":requestKey});
+      setScript(response.data.script||""); setNotice(response.message||"VPN request completed.");
+      if(!response.data.replay) setName("");
+      await load();
     } catch(e) { setError(e.message); } finally { setLoading(false); }
   };
-  const action=async(id,operation)=>{
-    try { await apiSend(`/api/admin/vpn/peers/${id}/${operation}`,"POST"); await load(); }
+  const action=async(peer,operation)=>{
+    if(operation==="revoke"&&!window.confirm(`Revoke VPN "${peer.name}"? This cannot be undone.`)) return;
+    try { setError(""); await apiSend(`/api/admin/vpn/peers/${peer.id}/${operation}`,"POST"); await load(); }
     catch(e) { setError(e.message); }
   };
   const checkChr=()=>apiGet("/api/admin/vpn/chr-readback")
     .then(response=>{setReadback(response.data);setError("")})
+    .catch(e=>setError(e.message));
+  const reconcile=()=>apiSend("/api/admin/vpn/peers/reconcile","POST")
+    .then(async response=>{setNotice(`Reconciliation complete: ${response.data.mismatches} mismatch(es).`);await load()})
     .catch(e=>setError(e.message));
   const download=()=>{
     const url=URL.createObjectURL(new Blob([script],{type:"text/plain"}));
     const link=document.createElement("a"); link.href=url; link.download="nextgan-vpn.rsc"; link.click(); URL.revokeObjectURL(url);
   };
   return <div className="content">
-    <section className="page-title"><div><h1>VPN</h1><p>Create RouterOS 6 or 7 ready-to-paste VPN configurations</p></div></section>
-    {error&&<div className="data-warning">{error}</div>}
+    <section className="page-title"><div><h1>VPN</h1><p>Create and manage RouterOS 6 or 7 ready-to-paste VPN connections</p></div></section>
+    {error&&<div className="data-warning" role="alert">{error}</div>}
+    {notice&&<div className="data-success" role="status">{notice}</div>}
     {selectedReadiness&&!selectedReadiness.ready&&<div className="data-warning" role="status">RouterOS {routerOsMajor} setup incomplete: {selectedReadiness.missing.join(", ")}</div>}
     <section className="panel vpn-create">
       <h2>Create VPN</h2>
@@ -1100,22 +1119,29 @@ function VpnManagement() {
           <option value="7">RouterOS 7 — WireGuard</option>
           <option value="6">RouterOS 6 — L2TP/IPsec</option>
         </select></label>
-        <button className="quick" disabled={loading||selectedReadiness?.ready===false}>{loading?"Creating…":"Create VPN & Script"}</button>
+        <label>Router / NAS<select value={routerId} onChange={e=>setRouterId(e.target.value)} required>
+          <option value="">Select an active RouterOS {routerOsMajor} router</option>
+          {compatibleRouters.map(router=><option key={router.id} value={router.id}>{router.name} — {router.host}</option>)}
+        </select></label>
+        <button className="quick" disabled={loading||!routerId||selectedReadiness?.ready===false}>{loading?"Creating…":"Create VPN & Script"}</button>
       </form>
+      {!compatibleRouters.length&&<p className="empty-state">Add and activate a RouterOS {routerOsMajor} router in Routers / NAS first.</p>}
     </section>
     {script&&<section className="panel vpn-script">
-      <div className="panel-title"><div><h2>One-time MikroTik Script</h2><p>Copy or download now. The private credential is not shown again.</p></div>
+      <div className="panel-title"><div><h2>One-time MikroTik Script</h2><p>Paste this script in the selected MikroTik terminal. Save it now; credentials are not shown again.</p></div>
         <div><button onClick={()=>navigator.clipboard.writeText(script)}>Copy Script</button><button className="quick" onClick={download}>Download .rsc</button></div>
       </div>
       <pre>{script}</pre>
     </section>}
-    <section className="panel"><div className="panel-title"><div><h2>VPN Connections</h2><p>RouterOS version, protocol and synchronization state</p></div>
-      <div><button disabled={readiness?.chrSync?.ready===false} onClick={checkChr}>Check CHR</button><button disabled={readiness?.chrSync?.ready===false} onClick={()=>apiSend("/api/admin/vpn/peers/reconcile","POST").then(load).catch(e=>setError(e.message))}>Reconcile</button></div></div>
+    <section className="panel"><div className="panel-title"><div><h2>VPN Connections</h2><p>Tenant-owned router, protocol, lifecycle and live synchronization state</p></div>
+      <div><button disabled={readiness?.chrSync?.ready===false} onClick={checkChr}>Check CHR</button><button disabled={readiness?.chrSync?.ready===false} onClick={reconcile}>Reconcile</button></div></div>
       {readback&&<p role="status">CHR readback: {readback.length} WireGuard peers; {readback.filter(peer=>peer.lastHandshake).length} report a handshake.</p>}
-      <div className="table-wrap"><table><thead><tr><th>Name</th><th>RouterOS</th><th>Protocol</th><th>VPN IP</th><th>Status</th><th>Actions</th></tr></thead>
-      <tbody>{items.map(peer=><tr key={peer.id}><td>{peer.name}</td><td>OS {peer.routerOsMajor}</td><td>{peer.protocol}</td><td>{peer.tunnelIp}</td><td>{peer.status}</td>
-       <td>{peer.protocol==="wireguard"&&<><button disabled={readiness?.chrSync?.ready===false} onClick={()=>action(peer.id,"sync")}>Connect</button><button onClick={()=>action(peer.id,"disable")}>Disable</button></>}<button onClick={()=>action(peer.id,"revoke")}>Revoke</button></td>
+      <div className="table-wrap"><table><thead><tr><th>Name</th><th>Router</th><th>RouterOS</th><th>Protocol</th><th>VPN IP</th><th>Status</th><th>Last sync</th><th>Handshake</th><th>Actions</th></tr></thead>
+      <tbody>{items.map(peer=><tr key={peer.id}><td>{peer.name}</td><td>{peer.routerName||"—"}</td><td>OS {peer.routerOsMajor}</td><td>{peer.protocol}</td><td>{peer.tunnelIp}</td><td>{peer.status}</td>
+       <td>{peer.lastSyncedAt?new Date(peer.lastSyncedAt).toLocaleString():"Never"}</td><td>{peer.lastHandshakeAt?new Date(peer.lastHandshakeAt).toLocaleString():"Not reported"}</td>
+       <td>{peer.protocol==="wireguard"&&<><button disabled={readiness?.chrSync?.ready===false} onClick={()=>action(peer,"sync")}>{peer.status==="SyncError"?"Retry":"Enable"}</button><button disabled={peer.status!=="Active"} onClick={()=>action(peer,"disable")}>Disable</button></>}<button disabled={peer.status==="Revoked"} onClick={()=>action(peer,"revoke")}>Revoke</button></td>
       </tr>)}</tbody></table></div>
+      {!items.length&&<p className="empty-state">No VPN connections yet. Select a router above to create the first one.</p>}
     </section>
   </div>;
 }

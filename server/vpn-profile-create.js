@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { allocateVpnAddress } from "./vpn-address.js";
 import { generateVpnPassword, generateWireGuardKeyPair } from "./wireguard-keys.js";
 import { renderVpnClientScript } from "./vpn-client-script.js";
@@ -18,6 +19,18 @@ const required=(value,label)=>{
  if(!text) throw Object.assign(new Error(`${label} is not configured`),{status:503});
  return text;
 };
+const optionalId=(value,label)=>{
+ if(value===undefined||value===null||value==="") return null;
+ const id=Number(value);
+ if(!Number.isSafeInteger(id)||id<1) throw Object.assign(new Error(`Invalid ${label}`),{status:422});
+ return id;
+};
+const idempotencyValue=value=>{
+ const key=String(value||"");
+ if(key&&!/^[A-Za-z0-9._:-]{8,128}$/.test(key))
+  throw Object.assign(new Error("Invalid Idempotency-Key"),{status:422});
+ return key||null;
+};
 export function vpnRuntimeConfig(env=process.env) {
  return {
   endpointAddress:required(env.VPN_PUBLIC_ENDPOINT,"VPN public endpoint"),
@@ -28,9 +41,11 @@ export function vpnRuntimeConfig(env=process.env) {
 }
 export async function createVpnProfile(pool,input,config) {
  const name=nameValue(input.name),routerOsMajor=majorValue(input.routerOsMajor);
- const actorId=Number(input.actorId);
+ const actorId=Number(input.actorId),routerId=optionalId(input.routerId,"router ID");
+ const idempotencyKey=idempotencyValue(input.idempotencyKey);
  if(!Number.isSafeInteger(actorId)||actorId<1) throw Object.assign(new Error("Invalid actor"),{status:422});
  const protocol=routerOsMajor===7?"wireguard":"l2tp_ipsec";
+ const fingerprint=crypto.createHash("sha256").update(JSON.stringify({name,routerOsMajor,routerId})).digest("hex");
  const wireguard=routerOsMajor===7?generateWireGuardKeyPair():null;
  const password=routerOsMajor===6?generateVpnPassword():null;
  const username=routerOsMajor===6?`ngvpn-${generateVpnPassword().slice(0,16)}`:null;
@@ -38,14 +53,35 @@ export async function createVpnProfile(pool,input,config) {
  try {
   await db.query("BEGIN");
   await db.query("select pg_advisory_xact_lock(778001)");
+  if(idempotencyKey) {
+   const replay=await db.query(`select id,name,host(tunnel_ip) "tunnelIp",status,
+    routeros_major "routerOsMajor",protocol,vpn_username "vpnUsername",router_id "routerId",
+    request_fingerprint "requestFingerprint"
+    from vpn_peers where owner_user_id=$1 and idempotency_key=$2 for update`,[actorId,idempotencyKey]);
+   if(replay.rows[0]) {
+    if(replay.rows[0].requestFingerprint!==fingerprint)
+     throw Object.assign(new Error("Idempotency-Key already used for a different VPN request"),{status:409});
+    await db.query("COMMIT");
+    return {peer:replay.rows[0],script:null,oneTimeSecret:true,replay:true};
+   }
+  }
+  if(routerId) {
+   const router=await db.query(`select id,router_os_version "routerOsVersion" from app_routers
+    where id=$1 and owner_user_id=$2 and deleted_at is null for share`,[routerId,actorId]);
+   if(!router.rows[0]) throw Object.assign(new Error("Router not found"),{status:404});
+   if(Number(router.rows[0].routerOsVersion)!==routerOsMajor)
+    throw Object.assign(new Error("Selected RouterOS version does not match router"),{status:422});
+  }
   const allocated=await db.query("select host(tunnel_ip) address from vpn_peers");
   const tunnelIp=allocateVpnAddress(allocated.rows.map(row=>row.address));
   const inserted=await db.query(`insert into vpn_peers
-   (name,public_key,tunnel_ip,created_by,routeros_major,protocol,vpn_username)
-   values($1,$2,$3,$4,$5,$6,$7)
+   (name,public_key,tunnel_ip,created_by,owner_user_id,routeros_major,protocol,vpn_username,
+    router_id,idempotency_key,request_fingerprint)
+   values($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10)
    returning id,name,public_key "publicKey",host(tunnel_ip) "tunnelIp",status,
-   routeros_major "routerOsMajor",protocol,vpn_username "vpnUsername"`,
-   [name,wireguard?.publicKey||null,tunnelIp,actorId,routerOsMajor,protocol,username]);
+   routeros_major "routerOsMajor",protocol,vpn_username "vpnUsername",router_id "routerId"`,
+   [name,wireguard?.publicKey||null,tunnelIp,actorId,routerOsMajor,protocol,username,
+    routerId,idempotencyKey,fingerprint]);
   const peer=inserted.rows[0];
   if(routerOsMajor===6) {
    required(config.ipsecSecret,"L2TP/IPsec secret");
@@ -59,9 +95,9 @@ export async function createVpnProfile(pool,input,config) {
    endpointPort:config.endpointPort,privateKey:wireguard?.privateKey,serverPublicKey:config.serverPublicKey,
    username,password,ipsecSecret:config.ipsecSecret,
   });
-  await db.query("insert into vpn_peer_audit(peer_id,actor_user_id,action) values($1,$2,'Created')",[peer.id,actorId]);
+  await db.query("insert into vpn_peer_audit(peer_id,actor_user_id,owner_user_id,action) values($1,$2,$2,'Created')",[peer.id,actorId]);
   await db.query("COMMIT");
-  return {peer,script,oneTimeSecret:true};
+  return {peer,script,oneTimeSecret:true,replay:false};
  } catch(error) {
   await db.query("ROLLBACK").catch(()=>{});
   if(error.code==="23505") error.status=409;

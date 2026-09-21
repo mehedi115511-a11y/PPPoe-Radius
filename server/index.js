@@ -69,7 +69,7 @@ const configuredChrSync = () => {
 const peerOperation = (operation) => async (req,res,next) => {
   try {
     const data=await applyPeerOperation(pool,configuredChrSync(),{
-      peerId:Number(req.params.id),actorId:req.auth.id,operation,
+      peerId:Number(req.params.id),actorId:req.auth.id,ownerId:req.auth.id,operation,
     });
     res.json({data});
   } catch(error) { next(error); }
@@ -760,7 +760,7 @@ app.post("/api/clients/:id/recharge", authenticate, async (req, res, next) => {
 app.get("/api/admin/vpn/peers/:id/routeros-script", authenticate, requireAdmin, async (req, res, next) => {
  if (!/^[1-9][0-9]*$/.test(req.params.id)) return res.status(422).json({ error: "Invalid peer ID" });
  try {
-  const { rows } = await pool.query('select public_key "publicKey", host(tunnel_ip) "tunnelIp", status from vpn_peers where id=$1',[req.params.id]);
+  const { rows } = await pool.query('select public_key "publicKey", host(tunnel_ip) "tunnelIp", status from vpn_peers where id=$1 and owner_user_id=$2',[req.params.id,req.auth.id]);
   if (!rows[0] || rows[0].status === "Revoked") return res.status(404).json({ error: "Available peer not found" });
   const script = renderRouterOsPeerScript(rows[0]);
   res.set("Cache-Control", "no-store");
@@ -782,18 +782,21 @@ app.get("/api/admin/vpn/chr-readback", authenticate, requireAdmin, async (_req,r
 // Registry remains Pending until an independently verified CHR sync is available.
 app.get("/api/admin/vpn/peers", authenticate, requireAdmin, async (_req, res, next) => {
   try {
-    const { rows } = await pool.query('select id,name,public_key "publicKey",host(tunnel_ip) "tunnelIp",status,routeros_major "routerOsMajor",protocol,vpn_username "vpnUsername",created_at "createdAt",revoked_at "revokedAt" from vpn_peers order by id desc');
+    const { rows } = await pool.query('select p.id,p.name,p.public_key "publicKey",host(p.tunnel_ip) "tunnelIp",p.status,p.routeros_major "routerOsMajor",p.protocol,p.vpn_username "vpnUsername",p.router_id "routerId",r.name "routerName",p.last_synced_at "lastSyncedAt",p.last_handshake_at "lastHandshakeAt",p.created_at "createdAt",p.revoked_at "revokedAt" from vpn_peers p left join app_routers r on r.id=p.router_id where p.owner_user_id=$1 order by p.id desc',[_req.auth.id]);
     res.json({ data: rows, count: rows.length });
   } catch (error) { next(error); }
 });
 
 app.post("/api/admin/vpn/peers", authenticate, requireAdmin, async (req, res, next) => {
   try {
+    const idempotencyKey=req.get("Idempotency-Key");
+    if(!idempotencyKey) return res.status(422).json({error:"Idempotency-Key header required"});
     const data=await createVpnProfile(pool,{
-      name:req.body?.name,routerOsMajor:req.body?.routerOsMajor,actorId:req.auth.id,
+      name:req.body?.name,routerOsMajor:req.body?.routerOsMajor,routerId:req.body?.routerId,
+      actorId:req.auth.id,idempotencyKey,
     },vpnRuntimeConfig());
     res.set("Cache-Control","no-store");
-    res.status(201).json({data,message:"VPN created. Save the one-time script now."});
+    res.status(data.replay?200:201).json({data,message:data.replay?"VPN request replayed; the one-time script is not shown again.":"VPN created. Save the one-time script now."});
   } catch(error) { next(error); }
 });
 
@@ -807,11 +810,11 @@ app.post("/api/admin/vpn/peers/:id/disable", authenticate, requireAdmin, peerOpe
 app.post("/api/admin/vpn/peers/:id/revoke", authenticate, requireAdmin, async (req,res,next) => {
   if (!/^[1-9][0-9]*$/.test(req.params.id)) return res.status(422).json({ error:"Invalid VPN profile ID" });
   try {
-    const { rows } = await pool.query("select protocol from vpn_peers where id=$1", [req.params.id]);
+    const { rows } = await pool.query("select protocol from vpn_peers where id=$1 and owner_user_id=$2", [req.params.id,req.auth.id]);
     if (!rows.length) return res.status(404).json({ error: "VPN profile not found" });
     const data = rows[0].protocol === "l2tp_ipsec"
-      ? await revokeL2tpProfile(pool, { peerId:req.params.id, actorId:req.auth.id })
-      : await applyPeerOperation(pool, configuredChrSync(), { peerId:req.params.id, actorId:req.auth.id, operation:"Revoke" });
+      ? await revokeL2tpProfile(pool, { peerId:req.params.id, actorId:req.auth.id, ownerId:req.auth.id })
+      : await applyPeerOperation(pool, configuredChrSync(), { peerId:req.params.id, actorId:req.auth.id, ownerId:req.auth.id, operation:"Revoke" });
     res.json({ data });
   } catch(error) { next(error); }
 });

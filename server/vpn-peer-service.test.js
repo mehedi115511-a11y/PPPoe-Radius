@@ -14,7 +14,7 @@ function harness(current=peer) {
 }
 test("enables with readback then persists active state and audit in one transaction",async()=>{
   const {pool,client,sync}=harness();
-  await expect(applyPeerOperation(pool,sync,{peerId:7,actorId:1,operation:"Enable"})).resolves.toMatchObject({status:"Active"});
+  await expect(applyPeerOperation(pool,sync,{peerId:7,actorId:1,ownerId:1,operation:"Enable"})).resolves.toMatchObject({status:"Active"});
   expect(sync.enable).toHaveBeenCalledWith(expect.objectContaining({tunnelIp:"10.78.0.7"}));
   expect(client.query.mock.calls.some(([sql])=>/vpn_peer_sync_attempts/.test(sql))).toBe(true);
   expect(client.query).toHaveBeenLastCalledWith("COMMIT");
@@ -22,19 +22,19 @@ test("enables with readback then persists active state and audit in one transact
 });
 test("disables active and revokes disabled peers",async()=>{
   const disabled=harness({...peer,status:"Active"});
-  await expect(applyPeerOperation(disabled.pool,disabled.sync,{peerId:7,actorId:1,operation:"Disable"})).resolves.toMatchObject({status:"Disabled"});
+  await expect(applyPeerOperation(disabled.pool,disabled.sync,{peerId:7,actorId:1,ownerId:1,operation:"Disable"})).resolves.toMatchObject({status:"Disabled"});
   const revoked=harness({...peer,status:"Disabled"});
-  await expect(applyPeerOperation(revoked.pool,revoked.sync,{peerId:7,actorId:1,operation:"Revoke"})).resolves.toMatchObject({status:"Revoked"});
+  await expect(applyPeerOperation(revoked.pool,revoked.sync,{peerId:7,actorId:1,ownerId:1,operation:"Revoke"})).resolves.toMatchObject({status:"Revoked"});
 });
 test("invalid transition fails before a CHR write",async()=>{
   const {pool,sync}=harness({...peer,status:"Revoked"});
-  await expect(applyPeerOperation(pool,sync,{peerId:7,actorId:1,operation:"Enable"})).rejects.toMatchObject({status:409});
+  await expect(applyPeerOperation(pool,sync,{peerId:7,actorId:1,ownerId:1,operation:"Enable"})).rejects.toMatchObject({status:409});
   expect(sync.enable).not.toHaveBeenCalled();
 });
 test("CHR failure rolls back, records sanitized failure and marks SyncError",async()=>{
   const {pool,client,sync}=harness();
   sync.enable.mockRejectedValue(new Error("socket failed with secret detail"));
-  await expect(applyPeerOperation(pool,sync,{peerId:7,actorId:1,operation:"Enable"})).rejects.toMatchObject({status:502,code:"CHR_OPERATION_FAILED"});
+  await expect(applyPeerOperation(pool,sync,{peerId:7,actorId:1,ownerId:1,operation:"Enable"})).rejects.toMatchObject({status:502,code:"CHR_OPERATION_FAILED"});
   expect(client.query).toHaveBeenCalledWith("ROLLBACK");
   expect(pool.query.mock.calls.flat().join(" ")).not.toContain("secret detail");
   expect(pool.query.mock.calls.some(([sql,args])=>/last_sync_error/.test(sql)&&args[1]==="CHR_OPERATION_FAILED")).toBe(true);

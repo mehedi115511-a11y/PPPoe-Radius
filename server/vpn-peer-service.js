@@ -17,7 +17,8 @@ const safeCode = (error) => {
 
 export async function applyPeerOperation(pool, sync, input) {
   if (!pool?.connect || !sync) throw new TypeError("Database and CHR sync required");
-  const peerId=validId(input.peerId,"peer ID"), actorId=validId(input.actorId,"actor ID");
+  const peerId=validId(input.peerId,"peer ID"), actorId=validId(input.actorId,"actor ID"),
+    ownerId=validId(input.ownerId,"owner ID");
   const operation=String(input.operation || "");
   if (!allowed[operation]) throw Object.assign(new Error("Invalid peer operation"),{status:422});
   const db=await pool.connect();
@@ -25,7 +26,7 @@ export async function applyPeerOperation(pool, sync, input) {
     await db.query("BEGIN");
     await db.query("select pg_advisory_xact_lock(778002,$1)",[peerId]);
     const found=await db.query(`select id,public_key "publicKey",host(tunnel_ip) "tunnelIp",status,protocol
-      from vpn_peers where id=$1 for update`,[peerId]);
+      from vpn_peers where id=$1 and owner_user_id=$2 for update`,[peerId,ownerId]);
     const peer=found.rows[0];
     if (!peer) throw Object.assign(new Error("Peer not found"),{status:404});
     if (peer.protocol && peer.protocol !== "wireguard")
@@ -34,9 +35,9 @@ export async function applyPeerOperation(pool, sync, input) {
     const readback=await sync[operation.toLowerCase()](peer);
     const updated=await db.query(`update vpn_peers set status=$2,last_synced_at=now(),last_sync_error=null,
       revoked_at=case when $2='Revoked' then now() else revoked_at end,updated_at=now()
-      where id=$1 returning id,status,last_synced_at "lastSyncedAt"`,[peerId,targetStatus[operation]]);
-    await db.query(`insert into vpn_peer_sync_attempts(peer_id,actor_user_id,operation,outcome,readback)
-      values($1,$2,$3,'Succeeded',$4)`,[peerId,actorId,operation,JSON.stringify(readback)]);
+      where id=$1 and owner_user_id=$3 returning id,status,last_synced_at "lastSyncedAt"`,[peerId,targetStatus[operation],ownerId]);
+    await db.query(`insert into vpn_peer_sync_attempts(peer_id,actor_user_id,owner_user_id,operation,outcome,readback)
+      values($1,$2,$3,$4,'Succeeded',$5)`,[peerId,actorId,ownerId,operation,JSON.stringify(readback)]);
     await db.query("COMMIT");
     return updated.rows[0];
   } catch(error) {
@@ -44,9 +45,9 @@ export async function applyPeerOperation(pool, sync, input) {
     if (error.status) throw error;
     const code=safeCode(error);
     await pool.query(`update vpn_peers set status=case when status='Revoked' then status else 'SyncError' end,
-      last_sync_error=$2,updated_at=now() where id=$1`,[peerId,code]).catch(()=>{});
-    await pool.query(`insert into vpn_peer_sync_attempts(peer_id,actor_user_id,operation,outcome,error_code)
-      values($1,$2,$3,'Failed',$4)`,[peerId,actorId,operation,code]).catch(()=>{});
+      last_sync_error=$2,updated_at=now() where id=$1 and owner_user_id=$3`,[peerId,code,ownerId]).catch(()=>{});
+    await pool.query(`insert into vpn_peer_sync_attempts(peer_id,actor_user_id,owner_user_id,operation,outcome,error_code)
+      select id,$2,$3,$4,'Failed',$5 from vpn_peers where id=$1 and owner_user_id=$3`,[peerId,actorId,ownerId,operation,code]).catch(()=>{});
     throw Object.assign(new Error("CHR synchronization failed"),{status:502,code,cause:error});
   } finally { db.release(); }
 }
@@ -63,10 +64,10 @@ const assessPeer = (peer, matches) => {
 };
 
 export async function reconcilePeers(pool, sync, actorUserId) {
-  const actorId=validId(actorUserId,"actor ID");
+  const actorId=validId(actorUserId,"actor ID"), ownerId=actorId;
   if (typeof sync?.list !== "function") throw new TypeError("CHR readback required");
   const [registryResult,chrPeers]=await Promise.all([
-    pool.query(`select id,public_key "publicKey",host(tunnel_ip) "tunnelIp",status from vpn_peers where protocol='wireguard' order by id`),
+    pool.query(`select id,public_key "publicKey",host(tunnel_ip) "tunnelIp",status from vpn_peers where protocol='wireguard' and owner_user_id=$1 order by id`,[ownerId]),
     sync.list(),
   ]);
   const registry=registryResult.rows;
@@ -85,9 +86,9 @@ export async function reconcilePeers(pool, sync, actorUserId) {
     await db.query("select pg_advisory_xact_lock(778003)");
     for (const result of results) {
       await db.query(`insert into vpn_peer_sync_attempts
-        (peer_id,actor_user_id,operation,outcome,error_code,readback)
-        values($1,$2,'Reconcile',$3,$4,$5)`,[
-        result.peerId,actorId,result.inSync?"Succeeded":"Mismatch",result.errorCode,JSON.stringify(result.readback),
+        (peer_id,actor_user_id,owner_user_id,operation,outcome,error_code,readback)
+        values($1,$2,$3,'Reconcile',$4,$5,$6)`,[
+        result.peerId,actorId,ownerId,result.inSync?"Succeeded":"Mismatch",result.errorCode,JSON.stringify(result.readback),
       ]);
     }
     await db.query("COMMIT");
@@ -106,12 +107,13 @@ export async function reconcilePeers(pool, sync, actorUserId) {
 export async function revokeL2tpProfile(pool, input) {
   const peerId = validId(input.peerId, "peer ID");
   const actorId = validId(input.actorId, "actor ID");
+  const ownerId = validId(input.ownerId, "owner ID");
   const db = await pool.connect();
   try {
     await db.query("BEGIN");
     const { rows } = await db.query(
-      "select id,protocol,vpn_username username,status from vpn_peers where id=$1 for update",
-      [peerId],
+      "select id,protocol,vpn_username username,status from vpn_peers where id=$1 and owner_user_id=$2 for update",
+      [peerId, ownerId],
     );
     const peer = rows[0];
     if (!peer) throw Object.assign(new Error("VPN profile not found"), { status: 404 });
@@ -119,8 +121,8 @@ export async function revokeL2tpProfile(pool, input) {
     if (peer.status === "Revoked") throw Object.assign(new Error("VPN profile already revoked"), { status: 409 });
     await db.query("delete from radcheck where username=$1", [peer.username]);
     await db.query("delete from radreply where username=$1", [peer.username]);
-    await db.query("update vpn_peers set status='Revoked',revoked_at=now(),updated_at=now() where id=$1", [peerId]);
-    await db.query("insert into vpn_peer_audit(peer_id,actor_user_id,action) values($1,$2,'Revoked')", [peerId, actorId]);
+    await db.query("update vpn_peers set status='Revoked',revoked_at=now(),updated_at=now() where id=$1 and owner_user_id=$2", [peerId, ownerId]);
+    await db.query("insert into vpn_peer_audit(peer_id,actor_user_id,owner_user_id,action) values($1,$2,$3,'Revoked')", [peerId, actorId, ownerId]);
     await db.query("COMMIT");
     return { id: peerId, status: "Revoked" };
   } catch (error) {

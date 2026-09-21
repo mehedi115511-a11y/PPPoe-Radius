@@ -13,7 +13,7 @@ function harness(protocol = "l2tp_ipsec") {
 }
 test("revokes RouterOS 6 RADIUS credentials with status and audit atomically", async () => {
   const { db, pool } = harness();
-  await expect(revokeL2tpProfile(pool, { peerId: 7, actorId: 1 })).resolves.toEqual({ id: 7, status: "Revoked" });
+  await expect(revokeL2tpProfile(pool, { peerId: 7, actorId: 1, ownerId: 1 })).resolves.toEqual({ id: 7, status: "Revoked" });
   const statements = db.query.mock.calls.map(([sql]) => sql);
   expect(statements).toContain("delete from radcheck where username=$1");
   expect(statements).toContain("delete from radreply where username=$1");
@@ -21,7 +21,7 @@ test("revokes RouterOS 6 RADIUS credentials with status and audit atomically", a
 });
 test("other protocols do not delete RADIUS credentials", async () => {
   const { db, pool } = harness("wireguard");
-  await expect(revokeL2tpProfile(pool, { peerId: 7, actorId: 1 })).rejects.toMatchObject({ status: 409 });
+  await expect(revokeL2tpProfile(pool, { peerId: 7, actorId: 1, ownerId: 1 })).rejects.toMatchObject({ status: 409 });
   expect(db.query.mock.calls.some(([sql]) => sql.startsWith("delete from radcheck"))).toBe(false);
   expect(db.query).toHaveBeenLastCalledWith("ROLLBACK");
 });
