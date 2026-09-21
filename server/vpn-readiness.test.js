@@ -9,7 +9,7 @@ test("reports per-version prerequisites without exposing secrets", () => {
     VPN_L2TP_IPSEC_SECRET:"secret-example-123456",
     CHR_ROUTEROS_REST_URL:"https://chr.example.com/",
     CHR_ROUTEROS_USERNAME:"service",
-    CHR_ROUTEROS_PASSWORD:"private-secret",
+    CENTRAL_VPN_ROUTER_PASSWORD:"private-secret",
     CHR_WIREGUARD_INTERFACE:"wg1",
   });
   expect(settings.routerOs6.ready).toBe(true);
@@ -20,6 +20,6 @@ test("reports per-version prerequisites without exposing secrets", () => {
 test("missing CHR credentials and invalid key fail readiness", () => {
   const settings = vpnReadiness({VPN_PUBLIC_ENDPOINT:"vpn.example.com",VPN_WIREGUARD_PUBLIC_KEY:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",CHR_ROUTEROS_REST_URL:"http://chr.example.com"});
   expect(settings.routerOs7.ready).toBe(false);
-  expect(settings.chrSync.missing).toContain("CHR_ROUTEROS_REST_URL (HTTPS)");
-  expect(settings.chrSync.missing).toContain("CHR_ROUTEROS_PASSWORD");
+  expect(settings.chrSync.missing).toContain("CENTRAL_VPN_ROUTER_REST_URL (HTTPS)");
+  expect(settings.chrSync.missing).toContain("CENTRAL_VPN_ROUTER_PASSWORD");
 });

@@ -782,7 +782,7 @@ app.get("/api/admin/vpn/chr-readback", authenticate, requireAdmin, async (_req,r
 // Registry remains Pending until an independently verified CHR sync is available.
 app.get("/api/admin/vpn/peers", authenticate, requireAdmin, async (_req, res, next) => {
   try {
-    const { rows } = await pool.query('select p.id,p.name,p.public_key "publicKey",host(p.tunnel_ip) "tunnelIp",p.status,p.routeros_major "routerOsMajor",p.protocol,p.vpn_username "vpnUsername",p.router_id "routerId",r.name "routerName",p.last_synced_at "lastSyncedAt",p.last_handshake_at "lastHandshakeAt",p.created_at "createdAt",p.revoked_at "revokedAt" from vpn_peers p left join app_routers r on r.id=p.router_id where p.owner_user_id=$1 order by p.id desc',[_req.auth.id]);
+    const { rows } = await pool.query('select p.id,p.name,host(p.tunnel_ip) "tunnelIp",p.status,p.routeros_major "routerOsMajor",p.protocol,p.vpn_username "vpnUsername",p.router_id "routerId",r.name "routerName",p.server_mode "serverMode",host(p.local_address) "localAddress",p.pool_id "poolId",ip.name "poolName",p.connection_state "connectionState",p.last_synced_at "lastSyncedAt",p.last_handshake_at "lastHandshakeAt",p.created_at "createdAt",p.revoked_at "revokedAt" from vpn_peers p left join app_routers r on r.id=p.router_id and r.owner_user_id=p.owner_user_id left join app_ip_pools ip on ip.id=p.pool_id and ip.owner_user_id=p.owner_user_id where p.owner_user_id=$1 order by p.id desc',[_req.auth.id]);
     res.json({ data: rows, count: rows.length });
   } catch (error) { next(error); }
 });
@@ -793,11 +793,33 @@ app.post("/api/admin/vpn/peers", authenticate, requireAdmin, async (req, res, ne
     if(!idempotencyKey) return res.status(422).json({error:"Idempotency-Key header required"});
     const data=await createVpnProfile(pool,{
       name:req.body?.name,routerOsMajor:req.body?.routerOsMajor,routerId:req.body?.routerId,
+      serverMode:req.body?.serverMode,protocol:req.body?.protocol,poolId:req.body?.poolId,
+      localAddress:req.body?.localAddress,remoteAddress:req.body?.remoteAddress,
+      username:req.body?.username,password:req.body?.password,
       actorId:req.auth.id,idempotencyKey,
     },vpnRuntimeConfig());
     res.set("Cache-Control","no-store");
     res.status(data.replay?200:201).json({data,message:data.replay?"VPN request replayed; the one-time script is not shown again.":"VPN created. Save the one-time script now."});
   } catch(error) { next(error); }
+});
+
+app.post("/api/admin/vpn/status/refresh", authenticate, requireAdmin, async (req,res,next) => {
+  try {
+    const ownerId=req.auth.id;
+    const {rows:peers}=await pool.query(`select id,public_key "publicKey",vpn_username "vpnUsername",protocol,server_mode "serverMode" from vpn_peers where owner_user_id=$1 and status<>'Revoked' order by id`,[ownerId]);
+    const names=peers.map(p=>p.vpnUsername).filter(Boolean);
+    const activeNames=names.length?(await pool.query('select distinct username from radacct where username=any($1::text[]) and acctstoptime is null',[names])).rows.map(r=>r.username):[];
+    let wireguard=[];
+    if(peers.some(p=>p.protocol==='wireguard'&&p.serverMode==='central_mikrotik')) wireguard=await configuredChrSync().list();
+    let connected=0;
+    for(const peer of peers){
+      const remote=peer.protocol==='wireguard'?wireguard.find(p=>p.publicKey===peer.publicKey):null;
+      const isConnected=peer.protocol==='wireguard'?Boolean(remote?.lastHandshake):activeNames.includes(peer.vpnUsername);
+      if(isConnected)connected++;
+      await pool.query('update vpn_peers set connection_state=$3,last_handshake_at=coalesce($4,last_handshake_at),last_readback=$5,updated_at=now() where id=$1 and owner_user_id=$2',[peer.id,ownerId,isConnected?'Connected':'Disconnected',remote?.lastHandshake||null,{protocol:peer.protocol,connected:isConnected}]);
+    }
+    res.set("Cache-Control","no-store").json({data:{total:peers.length,connected,disconnected:peers.length-connected}});
+  }catch(error){next(error)}
 });
 
 app.post("/api/admin/vpn/peers/reconcile", authenticate, requireAdmin, async (req,res,next) => {

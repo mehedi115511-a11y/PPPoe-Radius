@@ -80,11 +80,11 @@ export function createRouterOsRestAdapter(options) {
 
 export function routerOsRestAdapterFromEnv(env = process.env, overrides = {}) {
   return createRouterOsRestAdapter({
-    baseUrl: env.CHR_ROUTEROS_REST_URL,
-    username: env.CHR_ROUTEROS_USERNAME,
-    password: env.CHR_ROUTEROS_PASSWORD,
-    interfaceName: env.CHR_WIREGUARD_INTERFACE,
-    allowInsecureHttp: env.CHR_ROUTEROS_ALLOW_HTTP === "true",
+    baseUrl: env.CENTRAL_VPN_ROUTER_REST_URL || env.CHR_ROUTEROS_REST_URL,
+    username: env.CENTRAL_VPN_ROUTER_USERNAME || env.CHR_ROUTEROS_USERNAME,
+    password: env.CENTRAL_VPN_ROUTER_PASSWORD || env.CHR_ROUTEROS_PASSWORD,
+    interfaceName: env.CENTRAL_VPN_WIREGUARD_INTERFACE || env.CHR_WIREGUARD_INTERFACE,
+    allowInsecureHttp: (env.CENTRAL_VPN_ROUTER_ALLOW_HTTP || env.CHR_ROUTEROS_ALLOW_HTTP) === "true",
     ...overrides,
   });
 }

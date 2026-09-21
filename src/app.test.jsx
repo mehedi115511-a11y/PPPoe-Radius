@@ -121,8 +121,9 @@ test("opens dedicated VPN workspace with RouterOS 6 and 7 selection", async () =
   const selector=screen.getByLabelText("RouterOS Version");
   expect(selector).toHaveValue("7");
   expect(within(selector).getByRole("option", { name: /RouterOS 6/ })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Create VPN & Script" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Check CHR" })).toBeInTheDocument();
+  expect(screen.getByLabelText("VPN Server Location")).toHaveValue("native");
+  expect(screen.getByRole("button", { name: "Generate Script" })).toBeInTheDocument();
+  expect(screen.getByLabelText("VPN Protocol")).toHaveValue("wireguard");
 });
 
 test("opens billing with full cycle and custom day modes", async () => {

@@ -7,7 +7,7 @@ const safeName=(value)=>{
 const endpoint=(value)=>{
   const text=String(value||"").trim();
   if (!/^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?|(?:\d{1,3}\.){3}\d{1,3})$/.test(text))
-    throw new Error("Invalid CHR endpoint");
+    throw new Error("Invalid VPN server endpoint");
   return text;
 };
 export function renderMikroTikVpnClientScript(input) {
@@ -47,9 +47,23 @@ export function renderRouterOs6L2tpScript(input) {
 /interface l2tp-client/add name="${name}" connect-to=${host} user="${username}" password="${password}" use-ipsec=yes ipsec-secret="${ipsecSecret}" authentication=mschap2 add-default-route=no disabled=no comment="NextGan-VPN-${input.peerId}"
 :put "NextGan VPN configured for RouterOS 6"`;
 }
+export function renderRouterOsSstpScript(input) {
+  const name=safeName(input.interfaceName || `ng-vpn-${input.peerId}`);
+  const host=endpoint(input.endpointAddress);
+  const username=credential(input.username,"VPN username");
+  const password=credential(input.password,"VPN password");
+  const verify=input.verifyServerCertificate===false?"no":"yes";
+  return `# NextGan WiFi one-paste SSTP client setup (RouterOS ${Number(input.routerOsMajor)})
+/interface sstp-client/remove [find where name="${name}"]
+/interface sstp-client/add name="${name}" connect-to=${host} user="${username}" password="${password}" authentication=mschap2 verify-server-certificate=${verify} add-default-route=no disabled=no comment="NextGan-VPN-${input.peerId}"
+:put "NextGan SSTP VPN configured"`;
+}
 export function renderVpnClientScript(input) {
   const major=Number(input.routerOsMajor);
-  if (major===7) return renderMikroTikVpnClientScript(input);
-  if (major===6) return renderRouterOs6L2tpScript(input);
-  throw new Error("RouterOS version must be 6 or 7");
+  if(![6,7].includes(major)) throw new Error("RouterOS version must be 6 or 7");
+  const protocol=String(input.protocol||(major===7?"wireguard":"l2tp_ipsec"));
+  if (protocol==="wireguard"&&major===7) return renderMikroTikVpnClientScript(input);
+  if (protocol==="l2tp_ipsec"&&[6,7].includes(major)) return renderRouterOs6L2tpScript(input);
+  if (protocol==="sstp"&&[6,7].includes(major)) return renderRouterOsSstpScript(input);
+  throw new Error("Selected protocol is not compatible with this RouterOS version");
 }

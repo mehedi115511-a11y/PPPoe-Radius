@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { isIP } from "node:net";
 import { allocateVpnAddress } from "./vpn-address.js";
 import { generateVpnPassword, generateWireGuardKeyPair } from "./wireguard-keys.js";
 import { renderVpnClientScript } from "./vpn-client-script.js";
@@ -13,6 +14,22 @@ const majorValue=(value)=>{
  const major=Number(value);
  if(![6,7].includes(major)) throw Object.assign(new Error("RouterOS version must be 6 or 7"),{status:422});
  return major;
+};
+const serverModeValue=value=>{
+ const mode=String(value||"native");
+ if(!["native","central_mikrotik"].includes(mode)) throw Object.assign(new Error("VPN server location is invalid"),{status:422});
+ return mode;
+};
+const protocolValue=(value,major)=>{
+ const protocol=String(value||(major===7?"wireguard":"l2tp_ipsec"));
+ if(!["wireguard","l2tp_ipsec","sstp"].includes(protocol)) throw Object.assign(new Error("VPN protocol is invalid"),{status:422});
+ if(protocol==="wireguard"&&major!==7) throw Object.assign(new Error("WireGuard requires RouterOS 7"),{status:422});
+ return protocol;
+};
+const addressValue=(value,label,fallback)=>{
+ const text=String(value||fallback||"").trim();
+ if(isIP(text)!==4) throw Object.assign(new Error(`Invalid ${label}`),{status:422});
+ return text;
 };
 const required=(value,label)=>{
  const text=String(value||"").trim();
@@ -41,14 +58,17 @@ export function vpnRuntimeConfig(env=process.env) {
 }
 export async function createVpnProfile(pool,input,config) {
  const name=nameValue(input.name),routerOsMajor=majorValue(input.routerOsMajor);
+ const serverMode=serverModeValue(input.serverMode),protocol=protocolValue(input.protocol,routerOsMajor);
+ const localAddress=addressValue(input.localAddress,"local address","10.78.0.1");
+ const requestedRemote=input.remoteAddress?addressValue(input.remoteAddress,"remote address"):null;
  const actorId=Number(input.actorId),routerId=optionalId(input.routerId,"router ID");
+ const poolId=optionalId(input.poolId,"VPN pool ID");
  const idempotencyKey=idempotencyValue(input.idempotencyKey);
  if(!Number.isSafeInteger(actorId)||actorId<1) throw Object.assign(new Error("Invalid actor"),{status:422});
- const protocol=routerOsMajor===7?"wireguard":"l2tp_ipsec";
- const fingerprint=crypto.createHash("sha256").update(JSON.stringify({name,routerOsMajor,routerId})).digest("hex");
- const wireguard=routerOsMajor===7?generateWireGuardKeyPair():null;
- const password=routerOsMajor===6?generateVpnPassword():null;
- const username=routerOsMajor===6?`ngvpn-${generateVpnPassword().slice(0,16)}`:null;
+ const fingerprint=crypto.createHash("sha256").update(JSON.stringify({name,routerOsMajor,routerId,serverMode,protocol,localAddress,requestedRemote,poolId})).digest("hex");
+ const wireguard=protocol==="wireguard"?generateWireGuardKeyPair():null;
+ const password=protocol!=="wireguard"?String(input.password||generateVpnPassword()):null;
+ const username=protocol!=="wireguard"?String(input.username||`ngvpn-${generateVpnPassword().slice(0,16)}`):null;
  const db=await pool.connect();
  try {
   await db.query("BEGIN");
@@ -72,26 +92,42 @@ export async function createVpnProfile(pool,input,config) {
    if(Number(router.rows[0].routerOsVersion)!==routerOsMajor)
     throw Object.assign(new Error("Selected RouterOS version does not match router"),{status:422});
   }
+  let poolNetwork=null;
+  if(poolId) {
+   const poolRow=await db.query("select id,network::text network from app_ip_pools where id=$1 and owner_user_id=$2 and status='Active'",[poolId,actorId]);
+   if(!poolRow.rows[0]) throw Object.assign(new Error("VPN pool not found"),{status:404});
+   poolNetwork=poolRow.rows[0].network;
+  }
   const allocated=await db.query("select host(tunnel_ip) address from vpn_peers");
-  const tunnelIp=allocateVpnAddress(allocated.rows.map(row=>row.address));
+  const assigned=allocated.rows.map(row=>row.address);
+  if(requestedRemote&&assigned.includes(requestedRemote)) throw Object.assign(new Error("Remote address is already assigned"),{status:409});
+  if(requestedRemote&&poolNetwork){const inside=await db.query("select $1::inet << $2::cidr inside",[requestedRemote,poolNetwork]);if(!inside.rows[0]?.inside)throw Object.assign(new Error("Remote address is outside the selected VPN pool"),{status:422})}
+  let tunnelIp=requestedRemote;
+  if(!tunnelIp&&poolNetwork){
+   const available=await db.query(`select host(network($1::cidr)::inet+offset) address from generate_series(2,least((power(2,32-masklen($1::cidr))::int-2),65534)) offset where not exists(select 1 from vpn_peers where tunnel_ip=(network($1::cidr)::inet+offset)) order by offset limit 1`,[poolNetwork]);
+   if(!available.rows[0])throw Object.assign(new Error("Selected VPN pool is exhausted"),{status:409});
+   tunnelIp=available.rows[0].address;
+  }
+  if(!tunnelIp)tunnelIp=allocateVpnAddress(assigned);
   const inserted=await db.query(`insert into vpn_peers
    (name,public_key,tunnel_ip,created_by,owner_user_id,routeros_major,protocol,vpn_username,
-    router_id,idempotency_key,request_fingerprint)
-   values($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10)
+    router_id,idempotency_key,request_fingerprint,server_mode,local_address,pool_id)
+   values($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
    returning id,name,public_key "publicKey",host(tunnel_ip) "tunnelIp",status,
-   routeros_major "routerOsMajor",protocol,vpn_username "vpnUsername",router_id "routerId"`,
+   routeros_major "routerOsMajor",protocol,vpn_username "vpnUsername",router_id "routerId",
+   server_mode "serverMode",host(local_address) "localAddress",pool_id "poolId",connection_state "connectionState"`,
    [name,wireguard?.publicKey||null,tunnelIp,actorId,routerOsMajor,protocol,username,
-    routerId,idempotencyKey,fingerprint]);
+    routerId,idempotencyKey,fingerprint,serverMode,localAddress,poolId]);
   const peer=inserted.rows[0];
-  if(routerOsMajor===6) {
-   required(config.ipsecSecret,"L2TP/IPsec secret");
+  if(protocol!=="wireguard") {
+   if(protocol==="l2tp_ipsec") required(config.ipsecSecret,"L2TP/IPsec secret");
    await db.query("insert into radcheck(username,attribute,op,value) values($1,'Cleartext-Password',':=',$2)",[username,password]);
    await db.query("insert into radreply(username,attribute,op,value) values($1,'Framed-IP-Address',':=',$2)",[username,tunnelIp]);
   } else {
    required(config.serverPublicKey,"WireGuard server public key");
   }
   const script=renderVpnClientScript({
-   routerOsMajor,peerId:peer.id,tunnelIp,endpointAddress:required(config.endpointAddress,"VPN public endpoint"),
+   routerOsMajor,protocol,peerId:peer.id,tunnelIp,endpointAddress:required(config.endpointAddress,"VPN public endpoint"),
    endpointPort:config.endpointPort,privateKey:wireguard?.privateKey,serverPublicKey:config.serverPublicKey,
    username,password,ipsecSecret:config.ipsecSecret,
   });

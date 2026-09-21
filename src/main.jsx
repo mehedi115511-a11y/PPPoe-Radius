@@ -1064,85 +1064,39 @@ function BillingWorkspace() {
 }
 
 function VpnManagement() {
-  const [items,setItems]=useState([]),[routers,setRouters]=useState([]),[routerId,setRouterId]=useState(""),
-    [name,setName]=useState(""),[routerOsMajor,setRouterOsMajor]=useState("7"),[script,setScript]=useState(""),
-    [notice,setNotice]=useState(""),[error,setError]=useState(""),[loading,setLoading]=useState(false),
-    [readiness,setReadiness]=useState(null),[readback,setReadback]=useState(null);
-  const selectedReadiness=readiness?.[routerOsMajor==="6"?"routerOs6":"routerOs7"];
-  const compatibleRouters=routers.filter(router=>String(router.routerOsVersion)===routerOsMajor);
+  const [items,setItems]=useState([]),[pools,setPools]=useState([]),
+    [serverMode,setServerMode]=useState("native"),[name,setName]=useState(""),
+    [routerOsMajor,setRouterOsMajor]=useState("7"),[protocol,setProtocol]=useState("wireguard"),
+    [poolId,setPoolId]=useState(""),[localAddress,setLocalAddress]=useState("10.78.0.1"),[remoteAddress,setRemoteAddress]=useState(""),
+    [username,setUsername]=useState(""),[password,setPassword]=useState(""),[script,setScript]=useState(""),
+    [notice,setNotice]=useState(""),[error,setError]=useState(""),[loading,setLoading]=useState(false),[readiness,setReadiness]=useState(null);
   const load=()=>apiGet("/api/admin/vpn/peers").then(r=>setItems(r.data)).catch(e=>setError(e.message));
-  useEffect(()=>{
-    load();
-    apiGet("/api/routers").then(r=>setRouters(r.data.filter(router=>router.status==="Active"))).catch(e=>setError(e.message));
-    apiGet("/api/admin/vpn/readiness").then(r=>setReadiness(r.data)).catch(()=>{});
-  },[]);
-  useEffect(()=>{
-    if(routerId&&!compatibleRouters.some(router=>String(router.id)===String(routerId))) setRouterId("");
-  },[routerOsMajor,routers]);
-  const create=async(event)=>{
-    event.preventDefault(); setLoading(true); setError(""); setNotice(""); setScript("");
-    const requestKey=crypto.randomUUID();
-    try {
-      const response=await apiSend("/api/admin/vpn/peers","POST",
-        {name,routerOsMajor:Number(routerOsMajor),routerId:Number(routerId)},
-        {"Idempotency-Key":requestKey});
-      setScript(response.data.script||""); setNotice(response.message||"VPN request completed.");
-      if(!response.data.replay) setName("");
-      await load();
-    } catch(e) { setError(e.message); } finally { setLoading(false); }
-  };
-  const action=async(peer,operation)=>{
-    if(operation==="revoke"&&!window.confirm(`Revoke VPN "${peer.name}"? This cannot be undone.`)) return;
-    try { setError(""); await apiSend(`/api/admin/vpn/peers/${peer.id}/${operation}`,"POST"); await load(); }
-    catch(e) { setError(e.message); }
-  };
-  const checkChr=()=>apiGet("/api/admin/vpn/chr-readback")
-    .then(response=>{setReadback(response.data);setError("")})
-    .catch(e=>setError(e.message));
-  const reconcile=()=>apiSend("/api/admin/vpn/peers/reconcile","POST")
-    .then(async response=>{setNotice(`Reconciliation complete: ${response.data.mismatches} mismatch(es).`);await load()})
-    .catch(e=>setError(e.message));
-  const download=()=>{
-    const url=URL.createObjectURL(new Blob([script],{type:"text/plain"}));
-    const link=document.createElement("a"); link.href=url; link.download="nextgan-vpn.rsc"; link.click(); URL.revokeObjectURL(url);
-  };
+  useEffect(()=>{load();apiGet("/api/ip-pools").then(r=>setPools(r.data.filter(x=>x.status==="Active"))).catch(e=>setError(e.message));apiGet("/api/admin/vpn/readiness").then(r=>setReadiness(r.data)).catch(()=>{})},[]);
+  useEffect(()=>{if(routerOsMajor==="6"&&protocol==="wireguard")setProtocol("l2tp_ipsec")},[routerOsMajor]);
+  const ready=serverMode==="central_mikrotik"?readiness?.centralMikrotik:protocol==="wireguard"?readiness?.routerOs7:protocol==="l2tp_ipsec"?readiness?.routerOs6:readiness?.sstp;
+  const create=async event=>{event.preventDefault();setLoading(true);setError("");setNotice("");setScript("");try{const response=await apiSend("/api/admin/vpn/peers","POST",{name,serverMode,routerOsMajor:Number(routerOsMajor),protocol,routerId:null,poolId:poolId?Number(poolId):null,localAddress,remoteAddress:remoteAddress||null,username:protocol==="wireguard"?null:username||null,password:protocol==="wireguard"?null:password||null},{"Idempotency-Key":crypto.randomUUID()});setScript(response.data.script||"");setNotice(response.message||"VPN request completed.");if(!response.data.replay){setName("");setRemoteAddress("");setUsername("");setPassword("")}await load()}catch(e){setError(e.message)}finally{setLoading(false)}};
+  const action=async(peer,operation)=>{if(operation==="revoke"&&!window.confirm(`Delete VPN "${peer.name}"?`))return;try{setError("");await apiSend(`/api/admin/vpn/peers/${peer.id}/${operation}`,"POST");await load()}catch(e){setError(e.message)}};
+  const refreshStatus=async()=>{try{setLoading(true);setError("");const r=await apiSend("/api/admin/vpn/status/refresh","POST");setNotice(`Status refreshed: ${r.data.connected} connected, ${r.data.disconnected} disconnected.`);await load()}catch(e){setError(e.message)}finally{setLoading(false)}};
+  const addAsRouter=async peer=>{try{setLoading(true);setError("");await apiSend("/api/routers","POST",{name:peer.name,host:peer.tunnelIp,port:8729,routerOsVersion:String(peer.routerOsMajor),status:"Disabled"});setNotice(`${peer.name} added to Routers / NAS. Add API and RADIUS credentials there, then activate it.`)}catch(e){setError(e.message)}finally{setLoading(false)}};
+  const download=()=>{const url=URL.createObjectURL(new Blob([script],{type:"text/plain"})),link=document.createElement("a");link.href=url;link.download="nextgan-vpn.rsc";link.click();URL.revokeObjectURL(url)};
   return <div className="content">
-    <section className="page-title"><div><h1>VPN</h1><p>Create and manage RouterOS 6 or 7 ready-to-paste VPN connections</p></div></section>
-    {error&&<div className="data-warning" role="alert">{error}</div>}
-    {notice&&<div className="data-success" role="status">{notice}</div>}
-    {selectedReadiness&&!selectedReadiness.ready&&<div className="data-warning" role="status">RouterOS {routerOsMajor} setup incomplete: {selectedReadiness.missing.join(", ")}</div>}
-    <section className="panel vpn-create">
-      <h2>Create VPN</h2>
-      <form onSubmit={create} className="vpn-form">
-        <label>VPN Name<input value={name} onChange={e=>setName(e.target.value)} required minLength="3" placeholder="Branch Router"/></label>
-        <label>RouterOS Version<select value={routerOsMajor} onChange={e=>setRouterOsMajor(e.target.value)}>
-          <option value="7">RouterOS 7 — WireGuard</option>
-          <option value="6">RouterOS 6 — L2TP/IPsec</option>
-        </select></label>
-        <label>Router / NAS<select value={routerId} onChange={e=>setRouterId(e.target.value)} required>
-          <option value="">Select an active RouterOS {routerOsMajor} router</option>
-          {compatibleRouters.map(router=><option key={router.id} value={router.id}>{router.name} — {router.host}</option>)}
-        </select></label>
-        <button className="quick" disabled={loading||!routerId||selectedReadiness?.ready===false}>{loading?"Creating…":"Create VPN & Script"}</button>
-      </form>
-      {!compatibleRouters.length&&<p className="empty-state">Add and activate a RouterOS {routerOsMajor} router in Routers / NAS first.</p>}
-    </section>
-    {script&&<section className="panel vpn-script">
-      <div className="panel-title"><div><h2>One-time MikroTik Script</h2><p>Paste this script in the selected MikroTik terminal. Save it now; credentials are not shown again.</p></div>
-        <div><button onClick={()=>navigator.clipboard.writeText(script)}>Copy Script</button><button className="quick" onClick={download}>Download .rsc</button></div>
-      </div>
-      <pre>{script}</pre>
-    </section>}
-    <section className="panel"><div className="panel-title"><div><h2>VPN Connections</h2><p>Tenant-owned router, protocol, lifecycle and live synchronization state</p></div>
-      <div><button disabled={readiness?.chrSync?.ready===false} onClick={checkChr}>Check CHR</button><button disabled={readiness?.chrSync?.ready===false} onClick={reconcile}>Reconcile</button></div></div>
-      {readback&&<p role="status">CHR readback: {readback.length} WireGuard peers; {readback.filter(peer=>peer.lastHandshake).length} report a handshake.</p>}
-      <div className="table-wrap"><table><thead><tr><th>Name</th><th>Router</th><th>RouterOS</th><th>Protocol</th><th>VPN IP</th><th>Status</th><th>Last sync</th><th>Handshake</th><th>Actions</th></tr></thead>
-      <tbody>{items.map(peer=><tr key={peer.id}><td>{peer.name}</td><td>{peer.routerName||"—"}</td><td>OS {peer.routerOsMajor}</td><td>{peer.protocol}</td><td>{peer.tunnelIp}</td><td>{peer.status}</td>
-       <td>{peer.lastSyncedAt?new Date(peer.lastSyncedAt).toLocaleString():"Never"}</td><td>{peer.lastHandshakeAt?new Date(peer.lastHandshakeAt).toLocaleString():"Not reported"}</td>
-       <td>{peer.protocol==="wireguard"&&<><button disabled={readiness?.chrSync?.ready===false} onClick={()=>action(peer,"sync")}>{peer.status==="SyncError"?"Retry":"Enable"}</button><button disabled={peer.status!=="Active"} onClick={()=>action(peer,"disable")}>Disable</button></>}<button disabled={peer.status==="Revoked"} onClick={()=>action(peer,"revoke")}>Revoke</button></td>
-      </tr>)}</tbody></table></div>
-      {!items.length&&<p className="empty-state">No VPN connections yet. Select a router above to create the first one.</p>}
-    </section>
+    <section className="page-title"><div><h1>VPN</h1><p>Create the tunnel first, then add the connected MikroTik as Router / NAS</p></div></section>
+    {error&&<div className="data-warning" role="alert">{error}</div>}{notice&&<div className="data-success" role="status">{notice}</div>}
+    {ready&&!ready.ready&&<div className="data-warning" role="status">Selected VPN server is not ready: {ready.missing.join(", ")}</div>}
+    <section className="panel vpn-create"><h2>Add VPN</h2><form onSubmit={create} className="vpn-form">
+      <label>VPN Server Location<select value={serverMode} onChange={e=>setServerMode(e.target.value)}><option value="native">This Server — Native VPN</option><option value="central_mikrotik">Central MikroTik VPN Server</option></select></label>
+
+      <label>VPN Name<input value={name} onChange={e=>setName(e.target.value)} required minLength="3" placeholder="Saudi Router 01"/></label>
+      <label>RouterOS Version<select value={routerOsMajor} onChange={e=>setRouterOsMajor(e.target.value)}><option value="7">RouterOS 7</option><option value="6">RouterOS 6</option></select></label>
+      <label>VPN Protocol<select value={protocol} onChange={e=>setProtocol(e.target.value)}><option value="wireguard" disabled={routerOsMajor==="6"}>WireGuard</option><option value="sstp">SSTP</option><option value="l2tp_ipsec">L2TP/IPsec</option></select></label>
+      <label>VPN IP Pool<select value={poolId} onChange={e=>setPoolId(e.target.value)}><option value="">Default 10.78.0.0/24</option>{pools.map(p=><option key={p.id} value={p.id}>{p.name} — {p.network}</option>)}</select></label>
+      <label>Local Address<input value={localAddress} onChange={e=>setLocalAddress(e.target.value)} required/></label>
+      <label>Static Remote Address<input value={remoteAddress} onChange={e=>setRemoteAddress(e.target.value)} placeholder="Auto assign, or 10.78.0.20"/></label>
+      {protocol!=="wireguard"&&<><label>Username<input value={username} onChange={e=>setUsername(e.target.value)} placeholder="Auto-generate if blank"/></label><label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Auto-generate if blank"/></label></>}
+      <button className="quick" disabled={loading||ready?.ready===false}>{loading?"Creating…":"Generate Script"}</button>
+    </form></section>
+    {script&&<section className="panel vpn-script"><div className="panel-title"><div><h2>One-time MikroTik Script</h2><p>Paste in the client MikroTik terminal. Credentials are not shown again.</p></div><div><button onClick={()=>navigator.clipboard.writeText(script)}>Copy Script</button><button className="quick" onClick={download}>Download .rsc</button></div></div><pre>{script}</pre></section>}
+    <section className="panel"><div className="panel-title"><div><h2>VPN Connections</h2><p>Green Connected status appears after verified tunnel activity.</p></div><button onClick={refreshStatus} disabled={loading}>Refresh Status</button></div><div className="table-wrap"><table><thead><tr><th>Name</th><th>Server</th><th>Protocol</th><th>VPN IP</th><th>Status</th><th>Last connected</th><th>Actions</th></tr></thead><tbody>{items.map(peer=><tr key={peer.id}><td>{peer.name}</td><td>{peer.serverMode==="central_mikrotik"?peer.routerName||"Central MikroTik":"This Server"}</td><td>{peer.protocol}</td><td>{peer.tunnelIp}</td><td><span className={peer.connectionState==="Connected"?"active":"pending"}>{peer.connectionState||"Waiting"}</span></td><td>{peer.lastHandshakeAt?new Date(peer.lastHandshakeAt).toLocaleString():"Never"}</td><td><button disabled={peer.connectionState!=="Connected"||loading} onClick={()=>addAsRouter(peer)}>Add as Router / NAS</button><button disabled={peer.status==="Revoked"} onClick={()=>action(peer,"revoke")}>Delete</button></td></tr>)}</tbody></table></div>{!items.length&&<p className="empty-state">No VPN yet. Create a VPN and paste its script in the MikroTik.</p>}</section>
   </div>;
 }
 
