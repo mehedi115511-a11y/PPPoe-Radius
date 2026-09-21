@@ -27,7 +27,7 @@ describe('Router/NAS edit and removal safeguards', () => {
     render(<RouterWorkspace />);
     fireEvent.click(await screen.findByRole('button', { name: 'Edit router Test NAS' }));
     fireEvent.click(screen.getByRole('button', { name: 'Remove Router' }));
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('does not change the MikroTik configuration'));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('MikroTik configuration is unchanged'));
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
   it('sends DELETE after confirmation and refreshes software catalog', async () => {

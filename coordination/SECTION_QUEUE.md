@@ -3,7 +3,8 @@
 This file is the durable index for ordinary ChatGPT chats. A hashtag such as `#PPPOE-01` is a human-readable identifier, not an automatic ChatGPT conversation link. Read this file and the latest GitHub checkpoints on every new chat/turn. The GitHub repository, rather than a chat transcript, is the source of truth.
 
 Repository: `mehedi115511-a11y/PPPoe-Radius`
-Integration branch: `chat-c/integration-release`
+Active branch: `main`
+Legacy chat-a/chat-b/chat-c branches are archived; see `coordination/UNIFIED_WORKFLOW.md`.
 Integration worktree: `/opt/pppoe-radius-chat-c`
 Production worktree: `/opt/pppoe-radius-integration` (read-only before approved release)
 Tracking: Issues #4 (network), #5 (core), #6 (integration).
@@ -14,7 +15,7 @@ Never modify `/opt/project-two`.
 
 | ID | Section | Completion boundary | Current state |
 | --- | --- | --- | --- |
-| #PPPOE-01 | Routers / NAS | Tenant-owned router catalog and frontend CRUD, safe credential handling, RouterOS connection/health verification, shared secret lifecycle, removal consequences, isolated and live checks | READY |
+| #PPPOE-01 | Routers / NAS | Tenant-owned router catalog and frontend CRUD, safe credential handling, RouterOS connection/health verification, shared secret lifecycle, removal consequences, isolated and live checks | IMPLEMENTATION_COMPLETE_LIVE_PENDING |
 | #PPPOE-02 | IP Pools | Existing software CRUD plus MikroTik pool import/provision/readback, non-overlap, client assignment, rollback and cleanup | PARTIAL |
 | #PPPOE-03 | VPN | RouterOS 6/7 selection and script, CHR peer lifecycle/readback, real connection/handshake, revoke/recovery and UI status | PARTIAL |
 | #PPPOE-04 | Packages | Owned CRUD plus router import/profile synchronization, edit/delete propagation, referenced-package behavior | PARTIAL |

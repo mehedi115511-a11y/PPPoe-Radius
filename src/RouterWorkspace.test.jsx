@@ -13,7 +13,7 @@ describe('Router/NAS workspace', () => {
     render(<RouterWorkspace />);
     expect(await screen.findByText('Test NAS')).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith('/api/routers', expect.objectContaining({ method: 'GET', headers: expect.objectContaining({ Authorization: 'Bearer test-session' }) }));
-    expect(screen.getByText(/no device configuration is changed/i)).toBeTruthy();
+    expect(screen.getByText(/never displays stored passwords/i)).toBeTruthy();
   });
   it('submits a new router without credentials and refreshes the list', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(reply({ data: [] })).mockResolvedValueOnce(reply({ data: { id: 5 } }, 201)).mockResolvedValueOnce(reply({ data: [{ id: 5, name: 'New NAS', host: '192.0.2.5', port: 8729, routerOsVersion: '7', status: 'Disabled' }] }));
@@ -25,7 +25,7 @@ describe('Router/NAS workspace', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     const [path, options] = fetchMock.mock.calls[1];
     expect(path).toBe('/api/routers'); expect(options.method).toBe('POST');
-    expect(JSON.parse(options.body)).toEqual({ name: 'New NAS', host: '192.0.2.5', port: 8729, routerOsVersion: '7', status: 'Disabled' });
+    expect(JSON.parse(options.body)).toEqual({ name: 'New NAS', host: '192.0.2.5', port: 443, routerOsVersion: '7', status: 'Disabled' });
     expect(await screen.findByText('New NAS')).toBeTruthy();
   });
   it('surfaces API failures instead of claiming success', async () => {
