@@ -27,3 +27,26 @@ describe('Router/NAS HTTP routes', () => {
   it('rejects malformed IDs before querying DB', async () => { const { app, db } = fixture(); const r = await request(app, 'DELETE', '/api/routers/invalid'); expect(r.status).toBe(422); expect(db.query).not.toHaveBeenCalled(); });
   it('requires authentication middleware at registration', () => { expect(() => registerRouterRoutes(express(), {}, null)).toThrow(/authentication/); });
 });
+
+describe("Router assignment HTTP boundary", () => {
+  it("requires authentication before attempting assignment", async () => {
+    const { app, db } = fixture(false);
+    const result = await request(app, "POST", "/api/routers/7/assignments", { kind: "client", recordId: "5" });
+    expect(result.status).toBe(401);
+    expect(db.query).not.toHaveBeenCalled();
+  });
+  it("returns successful assignment with no-store and tenant-scoped SQL", async () => {
+    const { app, db } = fixture();
+    const result = await request(app, "POST", "/api/routers/7/assignments", { kind: "client", recordId: "5" });
+    expect(result.status).toBe(200);
+    expect(result.cache).toBe("no-store");
+    expect(result.body.data).toEqual({ routerId: 7, kind: "client", recordId: 5, assigned: true });
+    expect(db.query.mock.calls[0][1]).toEqual([7, 5, 11]);
+  });
+  it("rejects invalid payload without touching database", async () => {
+    const { app, db } = fixture();
+    const result = await request(app, "POST", "/api/routers/7/assignments", { kind: "client", recordId: "5", owner: 12 });
+    expect(result.status).toBe(422);
+    expect(db.query).not.toHaveBeenCalled();
+  });
+});
